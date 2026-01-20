@@ -123,9 +123,9 @@ class Controller():
         """Trajectory planning algorithm"""
     
         ## generate waypoints for planning
-        max_climb = 2 * 0.25 #m/s
-        max_forward = 3.5 * 0.1#m/s
-        max_descent = 0.1 #m/s
+        max_climb = 2 * 1 #m/s
+        max_forward = 2#m/s
+        max_descent = 0.5 #m/s
         climb_height = 1
         radius = 1
         circle_center = [0,-3,1]
@@ -163,13 +163,13 @@ class Controller():
         curve2_z = np.ones((len(curve2_th)),) * climb_height
 
         curve2_zd = 0 * np.ones((len(curve2_th),))
-        curve2_xd = max_forward * np.ones((len(curve2_th),))
-        curve2_yd = 0 * np.ones((len(curve2_th),))
+        curve2_xd = max_forward * np.cos(curve2_th + np.pi/2)
+        curve2_yd = max_forward * np.sin(curve2_th + np.pi/2)
 
         descent_duration = climb_height / max_descent
         curve3_z = np.linspace(climb_height,0, int(descent_duration*self.CTRL_FREQ))
-        curve3_x = np.ones((len(curve3_z),)) * wp0[0]
-        curve3_y = np.ones((len(curve3_z),)) * wp0[1]
+        curve3_x = np.ones((len(curve3_z),)) * curve2_x[-1]
+        curve3_y = np.ones((len(curve3_z),)) * curve2_y[-1]
 
         curve3_zd = -max_descent * np.ones((len(curve3_z),))
         curve3_xd = 0 * np.ones((len(curve3_z),))
@@ -191,11 +191,14 @@ class Controller():
         yaw_end = yaw_start + int(circle_duration*self.CTRL_FREQ)
         print("yaw len", len(yaw))
         print("th len", len(curve2_th))
-        # yaw[yaw_start:yaw_end] = th + np.pi / 2
         print("yaw_start - yaw_end", yaw_end - yaw_start)
         print(len(yaw[yaw_start:yaw_end]))
+
+        print("yaw start:" , yaw_start)
         yaw[yaw_start:yaw_end] = curve2_th + np.pi / 2
         
+        yaw[0:yaw_start] = curve2_th[0] + np.pi / 2
+        yaw[yaw_end:-1] = curve2_th[-1] + np.pi / 2
         self.ref_x = rx
         self.ref_y = ry
         self.ref_z = rz

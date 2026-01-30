@@ -9,6 +9,10 @@ from scipy.spatial.transform import Rotation
 from enum import Enum
 from functools import wraps
 
+# my imports START
+from numpy import linalg as LA
+# my imports END
+
 class GeoController():
     """Geometric control class for Crazyflies.
 
@@ -124,8 +128,14 @@ class GeoController():
                                  ):
         
         
-        desired_acc = target_acc
-        desired_yaw = target_rpy[2]
+        # desired_acc = target_acc
+        # desired_yaw = target_rpy[2]
+        print("target acceleration", target_acc)
+        print("target velocity", target_vel)
+        print("target position", target_pos)
+
+        Kp = np.diag([0,0.5,6])
+        Kv = np.diag([0,0,0.5])
 
         pos_e = target_pos - cur_pos
         vel_e = target_vel - cur_vel
@@ -135,10 +145,54 @@ class GeoController():
         
         #---------Lab2: Design a geomtric controller--------#
         #---------Task 1: Compute the desired acceration command--------#
-        
+        acc_fb = Kp@pos_e + Kv @ vel_e
+        desired_acc = acc_fb  + target_acc + self.grav * np.array([0,0,1]) 
         #---------Task 2: Compute the desired thrust command--------#
+        desired_thrust = self.mass * LA.norm(desired_acc)
 
         #---------Task 3: Compute the desired attitude command--------#
+        desired_yaw = 0
+
+        # desired_yaw = np.arctan2(target_pos[1], target_pos[0]) + np.pi/2 #atan(py/px) + pi/2
+        psi = desired_yaw #self.last_rpy[2]
+        x_c = np.array([np.cos(psi), np.sin(psi), 0] )
+        y_c = np.array([-np.sin(psi), np.cos(psi),  0] )
+        z_b_des = desired_acc / LA.norm(desired_acc)
+        
+        x_b_des = np.cross(y_c, z_b_des)
+        x_b_des = x_b_des /LA.norm(x_b_des)
+
+        y_b_des = np.cross(z_b_des, x_b_des)
+        y_b_des = y_b_des /LA.norm(y_b_des)
+
+        # compute desired roll and pitch
+        R = np.concatenate((x_b_des, y_b_des, z_b_des)).reshape((3,3))
+        # print("Rotation matrix shape: ", R.shape)
+        # print("Rotation matrix R=",R)
+        # a_actual = desired_thrust / self.mass  - self.grav * np.array([0,0,1])
+
+        # ax = a_actual[0]
+        # ay = a_actual[1]
+        # az = a_actual[2]
+        # desired_roll = np.arctan2(az, ay)
+        # desired_pitch = np.arctan2(az, ax)
+        desired_roll = -np.arcsin(-R[1,2]) # arcsin(-R_23)
+        desired_pitch = np.arctan2(R[1,0], R[1,1]) #arctan(R_21/R_22)
+
+        # desired_roll = 0
+        # desired_pitch = 0
+
+        print("pitch=", desired_pitch*180/np.pi)
+        print("roll=", desired_roll*180/np.pi)
+        print("yaw=", desired_yaw*180/np.pi)
+
+        print("pos_e=",pos_e)
+        print("vel_e=",vel_e)
+
+        # desired_euler = np.array([desired_pitch, desired_roll, desired_yaw]).reshape((3,))
+        desired_euler[0] = desired_roll
+        desired_euler[1] = desired_pitch
+        desired_euler[2] = desired_yaw
 
     
         return desired_thrust, desired_euler, pos_e

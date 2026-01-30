@@ -69,7 +69,8 @@ class Controller():
 
         """
         # [initial_info["x_reference"][0], initial_info["x_reference"][2], initial_info["x_reference"][4]]
-        self.tolerance =  initial_info["tracking_tolerance"]
+        # self.tolerance =  initial_info["tracking_tolerance"]
+        self.tolerance = 0.1
         self.radius = circle_radius
         # Save environment and control parameters.
         self.CTRL_TIMESTEP = initial_info["ctrl_timestep"]
@@ -165,7 +166,7 @@ class Controller():
                                               )
       return self.KF * rpms**2
 
-    def getRef(self,
+    def getRef_orig(self,
               time,
               obs,
               reward=None,
@@ -195,7 +196,7 @@ class Controller():
             raise RuntimeError("[ERROR] Attempting to use method 'getRef' but Controller was created with 'use_firmware' = True.")
 
         # Get the desired speed 
-        self.desired_speed = self.initial_obs[3]
+        self.desired_speed = self.initial_obs[3] / 20
         # Get the desired angular velocity
         self.omega = self.desired_speed / self.radius
         # Get the duration of completing one lap
@@ -210,6 +211,77 @@ class Controller():
         ref_pos = np.array([self.radius * math.cos(omega * time), self.radius * math.sin(omega * time), 0.0]) - bias_pos + init_pos
         ref_vel = np.array([-self.radius * omega * math.sin(omega * time), self.radius * omega * math.cos(omega * time), 0.0])
         ref_acc = np.array([-self.radius * omega2 * math.cos(omega * time), -self.radius * omega2 * math.sin(omega * time), 0.0])
+
+        target_p = ref_pos
+        target_v = ref_vel
+        target_a = ref_acc
+
+        return target_p, target_v, target_a
+    
+    def getRef(self,
+              time,
+              obs,
+              reward=None,
+              done=None,
+              info=None
+              ):
+ 
+        if self.ctrl is None:
+            raise RuntimeError("[ERROR] Attempting to use method 'getRef' but Controller was created with 'use_firmware' = True.")
+
+        # Get the desired speed 
+        self.desired_speed = self.initial_obs[3] / 20
+        # Get the desired angular velocity
+        # self.omega = self.desired_speed / self.radius
+        distance = 4
+        # Get the duration of completing one lap
+        self.duration = distance / self.desired_speed
+        # Set the centre of the circle
+        init_pos = np.array([self.initial_obs[0], self.initial_obs[2], self.initial_obs[4]])
+        bias_pos = np.array([self.radius, 0.0, 0.0])
+
+        # omega = self.omega
+        # omega2 = omega * omega
+        # Compute the reference pos, vel, and acc on the circel
+        ref_pos = np.array([0.0,0.0,0.0]) + init_pos
+        ref_vel = np.zeros(ref_pos.shape)
+        ref_acc = np.zeros(ref_vel.shape)
+
+        direction = 1
+        period = 2
+        iteration = np.floor(time / period)
+
+        if(iteration % 2 == 0):
+            direction = -1
+
+
+        dt = (time % period)
+        print("dt =", dt)
+        print("direction = ", direction)
+
+        max_acc = 2
+        acc_period = 0.5
+        max_vel = max_acc * acc_period
+        max_pos = 0.5 * max_acc * np.power(acc_period,2) + max_vel * (period-acc_period) + init_pos[1]
+        if dt < acc_period:
+            # ref_vel[1] = 0 + max_acc * dt * direction
+            ref_vel[1] = max_vel * direction
+            ref_acc[1] = max_acc * direction
+            ref_pos[1] = 0.5 * max_acc * dt*dt + init_pos[1]
+        elif dt > period - acc_period:
+            ref_acc[1] = -max_acc * direction
+            # ref_vel[1] = (max_vel - max_acc * dt) * direction
+            ref_vel[1] = max_vel * direction
+            ref_pos[1] = max_pos - 0.5 * max_acc * dt*dt
+        else:
+            ref_vel[1] = max_vel * direction
+            if(direction == -1):
+                ref_pos[1] = max_pos - 0.5 * max_acc * np.power(acc_period,2) - max_vel * dt
+            else:
+                ref_pos[1] = init_pos[1] + 0.5 * max_acc * np.power(acc_period,2) + max_vel * dt
+       
+        if iteration == 0:
+            ref_acc[1] = 0
 
         target_p = ref_pos
         target_v = ref_vel

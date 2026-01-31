@@ -217,7 +217,7 @@ class Controller():
         target_a = ref_acc
 
         return target_p, target_v, target_a
-    
+
     def getRef(self,
               time,
               obs,
@@ -230,7 +230,7 @@ class Controller():
             raise RuntimeError("[ERROR] Attempting to use method 'getRef' but Controller was created with 'use_firmware' = True.")
 
         # Get the desired speed 
-        self.desired_speed = self.initial_obs[3] / 20
+        self.desired_speed = self.initial_obs[3]
         # Get the desired angular velocity
         # self.omega = self.desired_speed / self.radius
         distance = 4
@@ -247,41 +247,19 @@ class Controller():
         ref_vel = np.zeros(ref_pos.shape)
         ref_acc = np.zeros(ref_vel.shape)
 
-        direction = 1
-        period = 2
-        iteration = np.floor(time / period)
+        period = 4
+        f = 1/period * 2 *np.pi
+        A = self.desired_speed #amplitude
 
-        if(iteration % 2 == 0):
-            direction = -1
+        # ref_pos[1]
+        position = A * np.sin(f*time)/f
+        velocity = A * np.cos(f*time)
+        acceleration = -A*np.sin(f*time)*f
 
+        ref_pos[1]+= position
+        ref_vel[1] = velocity
+        ref_acc[1] = acceleration
 
-        dt = (time % period)
-        print("dt =", dt)
-        print("direction = ", direction)
-
-        max_acc = 2
-        acc_period = 0.5
-        max_vel = max_acc * acc_period
-        max_pos = 0.5 * max_acc * np.power(acc_period,2) + max_vel * (period-acc_period) + init_pos[1]
-        if dt < acc_period:
-            # ref_vel[1] = 0 + max_acc * dt * direction
-            ref_vel[1] = max_vel * direction
-            ref_acc[1] = max_acc * direction
-            ref_pos[1] = 0.5 * max_acc * dt*dt + init_pos[1]
-        elif dt > period - acc_period:
-            ref_acc[1] = -max_acc * direction
-            # ref_vel[1] = (max_vel - max_acc * dt) * direction
-            ref_vel[1] = max_vel * direction
-            ref_pos[1] = max_pos - 0.5 * max_acc * dt*dt
-        else:
-            ref_vel[1] = max_vel * direction
-            if(direction == -1):
-                ref_pos[1] = max_pos - 0.5 * max_acc * np.power(acc_period,2) - max_vel * dt
-            else:
-                ref_pos[1] = init_pos[1] + 0.5 * max_acc * np.power(acc_period,2) + max_vel * dt
-       
-        if iteration == 0:
-            ref_acc[1] = 0
 
         target_p = ref_pos
         target_v = ref_vel

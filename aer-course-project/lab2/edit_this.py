@@ -134,8 +134,8 @@ class GeoController():
         print("target velocity", target_vel)
         print("target position", target_pos)
 
-        Kp = np.diag([0,0.5,6])
-        Kv = np.diag([0,0,0.5])
+        Kp = np.diag([0.1,0.1,6])
+        Kv = np.diag([1,1,0.5])
 
         pos_e = target_pos - cur_pos
         vel_e = target_vel - cur_vel

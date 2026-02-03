@@ -1,246 +1,340 @@
-import os
-import math
-import time
+"""Write your proposed algorithm.
+[NOTE]: The idea for the final project is to plan the trajectory based on a sequence of gates 
+while considering the uncertainty of the obstacles. The students should show that the proposed 
+algorithm is able to safely navigate a quadrotor to complete the task in both simulation and
+real-world experiments.
+
+Then run:
+
+    $ python3 final_project.py --overrides ./getting_started.yaml
+
+Tips:
+    Search for strings `INSTRUCTIONS` and `REPLACE THIS (START)` in this file.
+
+    Change the code between the 5 blocks starting with
+        #########################
+        # REPLACE THIS (START) ##
+        #########################
+    and ending with
+        #########################
+        # REPLACE THIS (END) ####
+        #########################
+    with your own code.
+
+    They are in methods:
+        1) planning
+        2) cmdFirmware
+
+"""
 import numpy as np
-import pybullet as p
-import matplotlib.pyplot as plt
 
-from scipy.spatial.transform import Rotation
-from enum import Enum
-from functools import wraps
+from collections import deque
 
-# my imports START
-from numpy import linalg as LA
-# my imports END
+try:
+    from project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory
+except ImportError:
+    # PyTest import.
+    from .project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory
 
-class GeoController():
-    """Geometric control class for Crazyflies.
+#########################
+# REPLACE THIS (START) ##
+#########################
+
+# Optionally, create and import modules you wrote.
+# Please refrain from importing large or unstable 3rd party packages.
+try:
+    import example_custom_utils as ecu
+except ImportError:
+    # PyTest import.
+    from . import example_custom_utils as ecu
+
+#########################
+# REPLACE THIS (END) ####
+#########################
+
+class Controller():
+    """Template controller class.
 
     """
 
     def __init__(self,
-                 g: float = 9.8,
-                 m: float = 0.036,
-                 kf: float = 3.16e-10,
-                 km: float = 7.94e-12,
-                 pwm2rpm_scale: float = 0.2685,
-                 pwm2rpm_const: float = 4070.3,
-                 min_pwm: float = 20000,
-                 max_pwm: float = 65535
+                 initial_obs,
+                 initial_info,
+                 use_firmware: bool = False,
+                 buffer_size: int = 100,
+                 verbose: bool = False
                  ):
-        """Common control classes __init__ method.
+        """Initialization of the controller.
+
+        INSTRUCTIONS:
+            The controller's constructor has access the initial state `initial_obs` and the a priori infromation
+            contained in dictionary `initial_info`. Use this method to initialize constants, counters, pre-plan
+            trajectories, etc.
 
         Args:
-            g (float, optional): The gravitational acceleration in m/s^2.
-            m (float, optional): Mass of the quadrotor in kg.
-            kf (float, optional): thrust coefficient.
-            km (float, optional): torque coefficient.
-            pwm2rpm_scale (float, optional): PWM-to-RPM scale factor.
-            pwm2rpm_const (float, optional): PWM-to-RPM constant factor.
-            min_pwm (float, optional): minimum PWM.
-            max_pwm (float, optional): maximum PWM.
+            initial_obs (ndarray): The initial observation of the quadrotor's state
+                [x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r].
+            initial_info (dict): The a priori information as a dictionary with keys
+                'symbolic_model', 'nominal_physical_parameters', 'nominal_gates_pos_and_type', etc.
+            use_firmware (bool, optional): Choice between the on-board controll in `pycffirmware`
+                or simplified software-only alternative.
+            buffer_size (int, optional): Size of the data buffers used in method `learn()`.
+            verbose (bool, optional): Turn on and off additional printouts and plots.
 
         """
-        self.grav = g
-        self.mass = m
-        self.GRAVITY = g * m # The gravitational force (M*g) acting on each drone.
-        self.KF = kf
-        self.KM = km
-        self.PWM2RPM_SCALE = pwm2rpm_scale
-        self.PWM2RPM_CONST = pwm2rpm_const
-        self.MIN_PWM = min_pwm
-        self.MAX_PWM = max_pwm
-        self.MIXER_MATRIX = np.array([[.5, -.5, 1], [.5, .5, -1], [-.5, .5, 1], [-.5, -.5, -1]])
+        # Save environment and control parameters.
+        self.CTRL_TIMESTEP = initial_info["ctrl_timestep"]
+        self.CTRL_FREQ = initial_info["ctrl_freq"]
+        self.initial_obs = initial_obs
+        self.VERBOSE = verbose
+        self.BUFFER_SIZE = buffer_size
+
+        # Store a priori scenario information.
+        # plan the trajectory based on the information of the (1) gates and (2) obstacles. 
+        self.NOMINAL_GATES = initial_info["nominal_gates_pos_and_type"]
+        self.NOMINAL_OBSTACLES = initial_info["nominal_obstacles_pos"]
+
+        # Check for pycffirmware.
+        if use_firmware:
+            self.ctrl = None
+        else:
+            # Initialize a simple PID Controller for debugging and test.
+            # Do NOT use for the IROS 2022 competition. 
+            self.ctrl = PIDController()
+            # Save additonal environment parameters.
+            self.KF = initial_info["quadrotor_kf"]
+
+        # Reset counters and buffers.
         self.reset()
+        self.interEpisodeReset()
 
-    def reset(self):
-        """Resets the control classes.
+        # perform trajectory planning
+        t_scaled = self.planning(use_firmware, initial_info)
 
-        The previous step's and integral errors for both position and attitude are set to zero.
+        ## visualization
+        # Plot trajectory in each dimension and 3D.
+        plot_trajectory(t_scaled, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
 
-        """
-        self.control_counter = 0  # Store the last roll, pitch, and yaw.
-        self.last_rpy = np.zeros(3)  # Initialized PID control variables.
-        self.last_pos_e = np.zeros(3)
-        self.integral_pos_e = np.zeros(3)
-        self.last_rpy_e = np.zeros(3)
-        self.integral_rpy_e = np.zeros(3)
-
-    def compute_control(self,
-                        control_timestep,
-                        cur_pos,
-                        cur_quat,
-                        cur_vel,
-                        cur_ang_vel,
-                        target_pos,
-                        target_rpy=np.zeros(3),
-                        target_vel=np.zeros(3),
-                        target_acc=np.zeros(3),
-                        target_rpy_rates=np.zeros(3)
-                        ):
-        """Compute the rotor speed using the geometric controller
-            Args:
-                control_timestep (float): The time step at which control is computed.
-                cur_pos (ndarray): (3,1)-shaped array of floats containing the current position.
-                cur_quat (ndarray): (4,1)-shaped array of floats containing the current orientation as a quaternion.
-                cur_vel (ndarray): (3,1)-shaped array of floats containing the current velocity.
-                cur_ang_vel (ndarray): (3,1)-shaped array of floats containing the current angular velocity.
-                target_pos (ndarray): (3,1)-shaped array of floats containing the desired position.
-                target_rpy (ndarray): (3,1)-shaped array of floats containing the desired yaw angle
-                target_vel (ndarray): (3,1)-shaped array of floats containing the desired velocity.
-                target_acc (ndarray): (3,1)-shaped array of floats containing the desired acceleration.
-                target_rpy_rates (ndarray): (3,1)-shaped array of floats containing the desired bodyrate.
-        """
-
-        self.control_counter += 1
-
-        desired_thrust, desire_rpy, pos_e = self._compute_desired_force_and_euler(control_timestep,
-                                                                           cur_pos,
-                                                                           cur_quat,
-                                                                           cur_vel,
-                                                                           target_pos,
-                                                                           target_rpy,
-                                                                           target_vel,
-                                                                           target_acc
-                                                                           )
+        # Draw the trajectory on PyBullet's GUI.
+        draw_trajectory(initial_info, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
 
 
+    def planning(self, use_firmware, initial_info):
+        """Trajectory planning algorithm"""
+        #########################
+        # REPLACE THIS (START) ##
+        #########################
+        ## generate waypoints for planning
 
-        rpm = self._compute_rpms(control_timestep,
-                                 desired_thrust,
-                                 cur_quat,
-                                 desire_rpy,
-                                 target_rpy_rates
-                                 )
-        cur_rpy = p.getEulerFromQuaternion(cur_quat)
-        return rpm, pos_e, desire_rpy[2] - cur_rpy[2]
+        # Call a function in module `example_custom_utils`.
+        ecu.exampleFunction()
 
+        # initial waypoint
+        if use_firmware:
+            waypoints = [(self.initial_obs[0], self.initial_obs[2], initial_info["gate_dimensions"]["tall"]["height"])]  # Height is hardcoded scenario knowledge.
+        else:
+            waypoints = [(self.initial_obs[0], self.initial_obs[2], self.initial_obs[4])]
 
-    def _compute_desired_force_and_euler(self,
-                                 control_timestep,
-                                 cur_pos,
-                                 cur_quat,
-                                 cur_vel,
-                                 target_pos,
-                                 target_rpy,
-                                 target_vel,
-                                 target_acc
-                                 ):
-        
-        
-        # desired_acc = target_acc
-        # desired_yaw = target_rpy[2]
-        print("target acceleration", target_acc)
-        print("target velocity", target_vel)
-        print("target position", target_pos)
+        # Example code: hardcode waypoints 
+        waypoints.append((-0.5, -3.0, 2.0))
+        waypoints.append((-0.5, -2.0, 2.0))
+        waypoints.append((-0.5, -1.0, 2.0))
+        waypoints.append((-0.5,  0.0, 2.0))
+        waypoints.append((-0.5,  1.0, 2.0))
+        waypoints.append((-0.5,  2.0, 2.0))
+        waypoints.append([initial_info["x_reference"][0], initial_info["x_reference"][2], initial_info["x_reference"][4]])
 
-        Kp = np.diag([0.1,0.1,6])
-        Kv = np.diag([1,1,0.5])
+        # Polynomial fit.
+        self.waypoints = np.array(waypoints)
+        deg = 6
+        t = np.arange(self.waypoints.shape[0])
+        fx = np.poly1d(np.polyfit(t, self.waypoints[:,0], deg))
+        fy = np.poly1d(np.polyfit(t, self.waypoints[:,1], deg))
+        fz = np.poly1d(np.polyfit(t, self.waypoints[:,2], deg))
+        duration = 15
+        t_scaled = np.linspace(t[0], t[-1], int(duration*self.CTRL_FREQ))
+        self.ref_x = fx(t_scaled)
+        self.ref_y = fy(t_scaled)
+        self.ref_z = fz(t_scaled)
 
-        pos_e = target_pos - cur_pos
-        vel_e = target_vel - cur_vel
-        
-        desired_thrust = 0
-        desired_euler = np.zeros(3)
-        
-        #---------Lab2: Design a geomtric controller--------#
-        #---------Task 1: Compute the desired acceration command--------#
-        acc_fb = Kp@pos_e + Kv @ vel_e
-        desired_acc = acc_fb  + target_acc + self.grav * np.array([0,0,1]) 
-        #---------Task 2: Compute the desired thrust command--------#
-        desired_thrust = self.mass * LA.norm(desired_acc)
+        #########################
+        # REPLACE THIS (END) ####
+        #########################
 
-        #---------Task 3: Compute the desired attitude command--------#
-        desired_yaw = 0
+        return t_scaled
 
-        # desired_yaw = np.arctan2(target_pos[1], target_pos[0]) + np.pi/2 #atan(py/px) + pi/2
-        psi = desired_yaw #self.last_rpy[2]
-        x_c = np.array([np.cos(psi), np.sin(psi), 0] )
-        y_c = np.array([-np.sin(psi), np.cos(psi),  0] )
-        z_b_des = desired_acc / LA.norm(desired_acc)
-        
-        x_b_des = np.cross(y_c, z_b_des)
-        x_b_des = x_b_des /LA.norm(x_b_des)
+    def cmdFirmware(self,
+                    time,
+                    obs,
+                    reward=None,
+                    done=None,
+                    info=None
+                    ):
+        """Pick command sent to the quadrotor through a Crazyswarm/Crazyradio-like interface.
 
-        y_b_des = np.cross(z_b_des, x_b_des)
-        y_b_des = y_b_des /LA.norm(y_b_des)
-
-        # compute desired roll and pitch
-        R = np.concatenate((x_b_des, y_b_des, z_b_des)).reshape((3,3))
-        # print("Rotation matrix shape: ", R.shape)
-        # print("Rotation matrix R=",R)
-        # a_actual = desired_thrust / self.mass  - self.grav * np.array([0,0,1])
-
-        # ax = a_actual[0]
-        # ay = a_actual[1]
-        # az = a_actual[2]
-        # desired_roll = np.arctan2(az, ay)
-        # desired_pitch = np.arctan2(az, ax)
-        desired_roll = -np.arcsin(-R[1,2]) # arcsin(-R_23)
-        desired_pitch = np.arctan2(R[1,0], R[1,1]) #arctan(R_21/R_22)
-
-        # desired_roll = 0
-        # desired_pitch = 0
-
-        print("pitch=", desired_pitch*180/np.pi)
-        print("roll=", desired_roll*180/np.pi)
-        print("yaw=", desired_yaw*180/np.pi)
-
-        print("pos_e=",pos_e)
-        print("vel_e=",vel_e)
-
-        # desired_euler = np.array([desired_pitch, desired_roll, desired_yaw]).reshape((3,))
-        desired_euler[0] = desired_roll
-        desired_euler[1] = desired_pitch
-        desired_euler[2] = desired_yaw
-
-    
-        return desired_thrust, desired_euler, pos_e
-
-
-    def _compute_rpms(self,
-                      control_timestep,
-                      thrust_cmd,
-                      cur_quat,
-                      target_euler,
-                      target_rpy_rates
-                      ):
-        """DSL's CF2.x PID attitude control.
+        INSTRUCTIONS:
+            Re-implement this method to return the target position, velocity, acceleration, attitude, and attitude rates to be sent
+            from Crazyswarm to the Crazyflie using, e.g., a `cmdFullState` call.
 
         Args:
-            control_timestep (float): The time step at which control is computed.
-            thrust (float): The target thrust along the drone z-axis.
-            cur_quat (ndarray): (4,1)-shaped array of floats containing the current orientation as a quaternion.
-            target_euler (ndarray): (3,1)-shaped array of floats containing the computed target Euler angles.
-            target_rpy_rates (ndarray): (3,1)-shaped array of floats containing the desired roll, pitch, and yaw rates.
+            time (float): Episode's elapsed time, in seconds.
+            obs (ndarray): The quadrotor's Vicon data [x, 0, y, 0, z, 0, phi, theta, psi, 0, 0, 0].
+            reward (float, optional): The reward signal.
+            done (bool, optional): Wether the episode has terminated.
+            info (dict, optional): Current step information as a dictionary with keys
+                'constraint_violation', 'current_target_gate_pos', etc.
 
         Returns:
-            ndarray: (4,1)-shaped array of integers containing the RPMs to apply to each of the 4 motors.
+            Command: selected type of command (takeOff, cmdFullState, etc., see Enum-like class `Command`).
+            List: arguments for the type of command (see comments in class `Command`)
 
         """
-        thrust = (math.sqrt(thrust_cmd / (4*self.KF)) - self.PWM2RPM_CONST) / self.PWM2RPM_SCALE
+        if self.ctrl is not None:
+            raise RuntimeError("[ERROR] Using method 'cmdFirmware' but Controller was created with 'use_firmware' = False.")
 
-        self.P_COEFF_TOR = np.array([70000., 70000., 60000.])
-        self.I_COEFF_TOR = np.array([.0, .0, 500.])
-        self.D_COEFF_TOR = np.array([20000., 20000., 12000.])
+        # [INSTRUCTIONS] 
+        # self.CTRL_FREQ is 30 (set in the getting_started.yaml file) 
+        # control input iteration indicates the number of control inputs sent to the quadrotor
+        iteration = int(time*self.CTRL_FREQ)
 
-        cur_rotation = np.array(p.getMatrixFromQuaternion(cur_quat)).reshape(3, 3)
-        cur_rpy = np.array(p.getEulerFromQuaternion(cur_quat))
-        target_quat = (Rotation.from_euler('xyz', target_euler, degrees=False)).as_quat()
-        w, x, y, z = target_quat
-        target_rotation = (Rotation.from_quat([w, x, y, z])).as_matrix()
-        rot_matrix_e = np.dot((target_rotation.transpose()), cur_rotation) - np.dot(cur_rotation.transpose(), target_rotation)
-        rot_e = np.array([rot_matrix_e[2, 1], rot_matrix_e[0, 2], rot_matrix_e[1, 0]])
-        rpy_rates_e = target_rpy_rates - (cur_rpy - self.last_rpy)/control_timestep
-        self.last_rpy = cur_rpy
-        self.integral_rpy_e = self.integral_rpy_e - rot_e*control_timestep
-        self.integral_rpy_e = np.clip(self.integral_rpy_e, -1500., 1500.)
-        self.integral_rpy_e[0:2] = np.clip(self.integral_rpy_e[0:2], -1., 1.)
-        # PID target torques.
-        target_torques = - np.multiply(self.P_COEFF_TOR, rot_e) \
-                         + np.multiply(self.D_COEFF_TOR, rpy_rates_e) \
-                         + np.multiply(self.I_COEFF_TOR, self.integral_rpy_e)
-        target_torques = np.clip(target_torques, -3200, 3200)
-        pwm = thrust + np.dot(self.MIXER_MATRIX, target_torques)
-        pwm = np.clip(pwm, self.MIN_PWM, self.MAX_PWM)
-        return self.PWM2RPM_SCALE * pwm + self.PWM2RPM_CONST
+        #########################
+        # REPLACE THIS (START) ##
+        #########################
+
+        # print("The info. of the gates ")
+        # print(self.NOMINAL_GATES)
+
+        if iteration == 0:
+            height = 1
+            duration = 2
+
+            command_type = Command(2)  # Take-off.
+            args = [height, duration]
+
+        # [INSTRUCTIONS] Example code for using cmdFullState interface   
+        elif iteration >= 3*self.CTRL_FREQ and iteration < 20*self.CTRL_FREQ:
+            step = min(iteration-3*self.CTRL_FREQ, len(self.ref_x) -1)
+            target_pos = np.array([self.ref_x[step], self.ref_y[step], self.ref_z[step]])
+            target_vel = np.zeros(3)
+            target_acc = np.zeros(3)
+            target_yaw = 0.
+            target_rpy_rates = np.zeros(3)
+
+            command_type = Command(1)  # cmdFullState.
+            args = [target_pos, target_vel, target_acc, target_yaw, target_rpy_rates]
+
+        elif iteration == 20*self.CTRL_FREQ:
+            command_type = Command(6)  # Notify setpoint stop.
+            args = []
+
+       # [INSTRUCTIONS] Example code for using goTo interface 
+        elif iteration == 20*self.CTRL_FREQ+1:
+            x = self.ref_x[-1]
+            y = self.ref_y[-1]
+            z = 1.5 
+            yaw = 0.
+            duration = 2.5
+
+            command_type = Command(5)  # goTo.
+            args = [[x, y, z], yaw, duration, False]
+
+        elif iteration == 23*self.CTRL_FREQ:
+            x = self.initial_obs[0]
+            y = self.initial_obs[2]
+            z = 1.5
+            yaw = 0.
+            duration = 6
+
+            command_type = Command(5)  # goTo.
+            args = [[x, y, z], yaw, duration, False]
+
+        elif iteration == 30*self.CTRL_FREQ:
+            height = 0.
+            duration = 3
+
+            command_type = Command(3)  # Land.
+            args = [height, duration]
+
+        elif iteration == 33*self.CTRL_FREQ-1:
+            command_type = Command(4)  # STOP command to be sent once the trajectory is completed.
+            args = []
+
+        else:
+            command_type = Command(0)  # None.
+            args = []
+
+        #########################
+        # REPLACE THIS (END) ####
+        #########################
+
+        return command_type, args
+
+    def cmdSimOnly(self,
+                   time,
+                   obs,
+                   reward=None,
+                   done=None,
+                   info=None
+                   ):
+        """PID per-propeller thrusts with a simplified, software-only PID quadrotor controller.
+
+        INSTRUCTIONS:
+            You do NOT need to re-implement this method for the project.
+            Only re-implement this method when `use_firmware` == False to return the target position and velocity.
+
+        Args:
+            time (float): Episode's elapsed time, in seconds.
+            obs (ndarray): The quadrotor's state [x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r].
+            reward (float, optional): The reward signal.
+            done (bool, optional): Wether the episode has terminated.
+            info (dict, optional): Current step information as a dictionary with keys
+                'constraint_violation', 'current_target_gate_pos', etc.
+
+        Returns:
+            List: target position (len == 3).
+            List: target velocity (len == 3).
+
+        """
+        if self.ctrl is None:
+            raise RuntimeError("[ERROR] Attempting to use method 'cmdSimOnly' but Controller was created with 'use_firmware' = True.")
+
+        iteration = int(time*self.CTRL_FREQ)
+
+        #########################
+        if iteration < len(self.ref_x):
+            target_p = np.array([self.ref_x[iteration], self.ref_y[iteration], self.ref_z[iteration]])
+        else:
+            target_p = np.array([self.ref_x[-1], self.ref_y[-1], self.ref_z[-1]])
+        target_v = np.zeros(3)
+        #########################
+
+        return target_p, target_v
+
+    def reset(self):
+        """Initialize/reset data buffers and counters.
+
+        Called once in __init__().
+
+        """
+        # Data buffers.
+        self.action_buffer = deque([], maxlen=self.BUFFER_SIZE)
+        self.obs_buffer = deque([], maxlen=self.BUFFER_SIZE)
+        self.reward_buffer = deque([], maxlen=self.BUFFER_SIZE)
+        self.done_buffer = deque([], maxlen=self.BUFFER_SIZE)
+        self.info_buffer = deque([], maxlen=self.BUFFER_SIZE)
+
+        # Counters.
+        self.interstep_counter = 0
+        self.interepisode_counter = 0
+
+    # NOTE: this function is not used in the course project. 
+    def interEpisodeReset(self):
+        """Initialize/reset learning timing variables.
+
+        Called between episodes in `getting_started.py`.
+
+        """
+        # Timing stats variables.
+        self.interstep_learning_time = 0
+        self.interstep_learning_occurrences = 0
+        self.interepisode_learning_time = 0

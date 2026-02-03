@@ -9,10 +9,6 @@ from scipy.spatial.transform import Rotation
 from enum import Enum
 from functools import wraps
 
-# my imports START
-from numpy import linalg as LA
-# my imports END
-
 class GeoController():
     """Geometric control class for Crazyflies.
 
@@ -128,85 +124,42 @@ class GeoController():
                                  ):
         
         
-        # desired_acc = target_acc
-        # desired_yaw = target_rpy[2]
-        print("target acceleration", target_acc)
-        print("target velocity", target_vel, " actual velocity = ", cur_vel)
-        print("target position", target_pos, " actual position = ", cur_pos)
-
-        Kp = np.diag([0.1,0.1,10])
-        Kv = np.diag([3,3,1])
+        desired_acc = target_acc
+        desired_yaw = target_rpy[2]
 
         pos_e = target_pos - cur_pos
         vel_e = target_vel - cur_vel
-
-        # max position error - 2 m
-        # max_pos_e = 2
-        # pos_e = max_pos_e * np.tanh(pos_e / max_pos_e)
-
-        # max_vel_e = 2
-        # vel_e = max_vel_e * np.tanh(pos_e / max_vel_e)
-
-
-        #TODO - cap position and vel errors
         
         desired_thrust = 0
         desired_euler = np.zeros(3)
         
         #---------Lab2: Design a geomtric controller--------#
+
+        Kpos = np.array([6.2, 6.2, 6.2])
+        Kvel = np.array([4.1, 4.1, 4.1])
+
         #---------Task 1: Compute the desired acceration command--------#
-        acc_fb = Kp@pos_e + Kv @ vel_e
-        desired_acc = acc_fb  + target_acc + self.grav * np.array([0,0,1]) 
+        
+        a_fb = np.multiply(Kpos, pos_e) + np.multiply(Kvel, vel_e)
+        a_des = a_fb + desired_acc + np.array([0.0, 0.0, self.grav])
+
         #---------Task 2: Compute the desired thrust command--------#
-        desired_thrust = self.mass * LA.norm(desired_acc)
+
+        a_des_norm = np.linalg.norm(a_des)
+        desired_thrust = self.mass * a_des_norm
 
         #---------Task 3: Compute the desired attitude command--------#
-        desired_yaw = 0
-        # desired_yaw = np.arctan2(target_vel[1], target_vel[0]) - np.pi/2 #atan(py/px) + pi/2
-        psi = desired_yaw #self.last_rpy[2]
-        x_c = np.array([np.cos(psi), np.sin(psi), 0] )
-        y_c = np.array([-np.sin(psi), np.cos(psi),  0] )
-        z_b_des = desired_acc / LA.norm(desired_acc)
-        
-        x_b_des = np.cross(y_c, z_b_des)
-        x_b_des = x_b_des /LA.norm(x_b_des)
 
-        y_b_des = np.cross(z_b_des, x_b_des)
-        y_b_des = y_b_des /LA.norm(y_b_des)
+        y_C = np.array([-math.sin(desired_yaw), math.cos(desired_yaw), 0.0])
+        z_B = a_des / a_des_norm
 
-        # compute desired roll and pitch
-        # R = np.concatenate((x_b_des, y_b_des, z_b_des)).reshape((3,3))
-        R = np.column_stack([x_b_des, y_b_des, z_b_des])
-        # print("Rotation matrix shape: ", R.shape)
-        # print("Rotation matrix R=",R)
-        # a_actual = desired_thrust / self.mass  - self.grav * np.array([0,0,1])
+        x_B_unnorm = np.cross(y_C, z_B)
+        x_B = x_B_unnorm / np.linalg.norm(x_B_unnorm)
+        y_B = np.cross(z_B, x_B)
 
-        # ax = a_actual[0]
-        # ay = a_actual[1]
-        # az = a_actual[2]
-        # desired_roll = np.arctan2(az, ay)
-        # desired_pitch = np.arctan2(az, ax)
-        # desired_roll = -np.arcsin(-R[1,2]) # arcsin(-R_23)
-        # desired_pitch = np.arctan2(R[1,0], R[1,1]) #arctan(R_21/R_22)
+        R_des = np.column_stack([x_B, y_B, z_B])
+        desired_euler = Rotation.from_matrix(R_des).as_euler('xyz', degrees=False)
 
-        desired_euler = Rotation.from_matrix(R).as_euler('xyz', degrees=False)
-
-        # desired_roll = 0
-        # desired_pitch = 0
-
-        print("pitch=", desired_euler[0]*180/np.pi)
-        print("roll=", desired_euler[1]*180/np.pi)
-        print("yaw=", desired_euler[2]*180/np.pi)
-
-        # print("pos_e=",pos_e)
-        # print("vel_e=",vel_e)
-
-        # desired_euler = np.array([desired_pitch, desired_roll, desired_yaw]).reshape((3,))
-        # desired_euler[0] = desired_roll
-        # desired_euler[1] = desired_pitch
-        # desired_euler[2] = desired_yaw
-
-    
         return desired_thrust, desired_euler, pos_e
 
 

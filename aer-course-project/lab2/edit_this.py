@@ -135,8 +135,8 @@ class GeoController():
         
         #---------Lab2: Design a geomtric controller--------#
 
-        Kpos = np.array([6.2, 6.2, 6.2])
-        Kvel = np.array([4.1, 4.1, 4.1])
+        Kpos = np.array([12.1, 12.1, 12.1])
+        Kvel = np.array([6.9, 6.9, 6.9])
 
         #---------Task 1: Compute the desired acceration command--------#
         

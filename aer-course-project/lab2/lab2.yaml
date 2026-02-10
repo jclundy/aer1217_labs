@@ -35,7 +35,7 @@ quadrotor_config:
     init_x: 3.0
     init_x_dot: 0
     init_y: 0.0
-    init_y_dot: 3.0
+    init_y_dot: 4.0
     init_z: 1.0
     init_z_dot: 0
     init_phi: 0

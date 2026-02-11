@@ -47,6 +47,10 @@ class GeoController():
         self.MIN_PWM = min_pwm
         self.MAX_PWM = max_pwm
         self.MIXER_MATRIX = np.array([[.5, -.5, 1], [.5, .5, -1], [-.5, .5, 1], [-.5, -.5, -1]])
+        self.error=[]
+        self.timestep = []
+        self.position_his = []
+        self.desired_poshis = []
         self.reset()
 
     def reset(self):
@@ -111,7 +115,7 @@ class GeoController():
         cur_rpy = p.getEulerFromQuaternion(cur_quat)
         return rpm, pos_e, desire_rpy[2] - cur_rpy[2]
 
-
+   
     def _compute_desired_force_and_euler(self,
                                  control_timestep,
                                  cur_pos,
@@ -122,14 +126,8 @@ class GeoController():
                                  target_vel,
                                  target_acc
                                  ):
-        #flatten inputs
-        cur_pos = cur_pos.reshape(3)
-        cur_vel = cur_vel.reshape(3)
-        target_pos = target_pos.reshape(3)
-        target_vel = target_vel.reshape(3)
-        target_acc = target_acc.reshape(3)
-        target_rpy = target_rpy.reshape(3)
-
+        
+        
         desired_acc = target_acc
         desired_yaw = target_rpy[2]
 
@@ -140,57 +138,53 @@ class GeoController():
         desired_euler = np.zeros(3)
         
         #---------Lab2: Design a geomtric controller--------#
-        #PD control gains
-        P = 40
-        V = 10
-        Kpos = np.diag([P, P, P])
-        Kvel = np.diag([V, V, V])
-        grav = np.array([0, 0, self.grav])
+
+        Kpos = np.array([12.1, 12.1, 12.1])
+        Kvel = np.array([6.9, 6.9, 6.9])
 
         #---------Task 1: Compute the desired acceration command--------#
-        #feedback controls
-        afb = (np.matmul(Kpos,pos_e)) + np.matmul(Kvel, vel_e)
-        desired_acc = afb + target_acc + grav
+        
+        a_fb = np.multiply(Kpos, pos_e) + np.multiply(Kvel, vel_e)
+        a_des = a_fb + desired_acc + np.array([0.0, 0.0, self.grav])
 
         #---------Task 2: Compute the desired thrust command--------#
-        #desired force
-        F_des= self.mass*desired_acc
 
-        #project on current quaternion z-axis
-        R_cur = np.array(p.getMatrixFromQuaternion(cur_quat)).reshape(3, 3)
-        z_curr = R_cur[:, 2]
-        desired_thrust = np.dot(F_des, z_curr)
+        a_des_norm = np.linalg.norm(a_des)
+        desired_thrust = self.mass * a_des_norm
 
         #---------Task 3: Compute the desired attitude command--------#
-        #thrust vector
-        norm_des_acc = np.linalg.norm(desired_acc)
-        
-        #check
-        if norm_des_acc > 1e-6:
-            z_b = desired_acc / norm_des_acc
-        else:
-            z_b = np.array([0, 0, 1]) #default upright if no acceleration
 
-        #heading vectors - from assignment handout
-        x_c = np.array ([np.cos(desired_yaw), np.sin(desired_yaw), 0 ])
-        y_c = np.array ([-np.sin(desired_yaw), np.cos(desired_yaw), 0 ])  
+        y_C = np.array([-math.sin(desired_yaw), math.cos(desired_yaw), 0.0])
+        z_B = a_des / a_des_norm
 
-        xcxzb = np.cross(x_c, z_b)
-        #check
-        if np.linalg.norm(xcxzb) > 1e-6:
-            x_b = xcxzb / np.linalg.norm(xcxzb) #from handout
-        else:
-            x_b = np.array ([1, 0, 0]) #default
-        
-        y_b = np.cross(z_b, x_b) #from handout
+        x_B_unnorm = np.cross(y_C, z_B)
+        x_B = x_B_unnorm / np.linalg.norm(x_B_unnorm)
+        y_B = np.cross(z_B, x_B)
 
-        #rotation matrix
-        R_des = np.column_stack((x_b, y_b, z_b))
+        R_des = np.column_stack([x_B, y_B, z_B])
+        desired_euler = Rotation.from_matrix(R_des).as_euler('xyz', degrees=False)
 
-        #convert to euler
-        desired_euler = np.array(Rotation.from_matrix(R_des).as_euler('xyz', degrees=False))
 
-    
+        ##error plots
+
+        x=cur_pos[0]
+        y=cur_pos[1]
+        z=cur_pos[2]
+        yaw = p.getEulerFromQuaternion(cur_quat)[2]
+        x_des = target_pos[0]
+        y_des = target_pos[1]
+        z_des = target_pos[2]
+        yaw_des = desired_yaw
+        err_x = x_des - x
+        err_y = y_des - y
+        err_z = z_des - z
+        err_yaw = yaw_des - yaw
+        error_ts = np.array([err_x, err_y, err_z, err_yaw])
+        self.position_his.append(cur_pos)
+        self.desired_poshis.append(target_pos)
+        self.error.append(error_ts)
+        self.timestep.append(control_timestep)
+
         return desired_thrust, desired_euler, pos_e
 
 
@@ -215,7 +209,7 @@ class GeoController():
 
         """
         thrust = (math.sqrt(thrust_cmd / (4*self.KF)) - self.PWM2RPM_CONST) / self.PWM2RPM_SCALE
-     
+
         self.P_COEFF_TOR = np.array([70000., 70000., 60000.])
         self.I_COEFF_TOR = np.array([.0, .0, 500.])
         self.D_COEFF_TOR = np.array([20000., 20000., 12000.])
@@ -240,4 +234,62 @@ class GeoController():
         pwm = thrust + np.dot(self.MIXER_MATRIX, target_torques)
         pwm = np.clip(pwm, self.MIN_PWM, self.MAX_PWM)
         return self.PWM2RPM_SCALE * pwm + self.PWM2RPM_CONST
-  
+    
+    def plot_results(self):
+        # """Plots the error history."""
+        # if not self.error:
+        #     print("No data to plot!")
+        #     return
+
+        # # Convert list to numpy array for easy slicing
+        # data = np.array(self.position_his)        
+        # data2 = np.array(self.desired_poshis)
+        # #remove last entry
+        # data = data[:-1]
+        # data2 = data2[:-1]
+        # # Create a time axis (assuming constant steps, or use time_history)
+        # time_axis = np.arange(len(data)) * 0.02 # Assuming 50Hz, adjust if needed
+
+        # fig, axs = plt.subplots(4, 1, figsize=(10, 12), sharex=True)
+        
+        # labels = ['X Error (m)', 'Y Error (m)', 'Z Error (m)', 'Yaw Error (rad)']
+        
+        # for i in range(3):
+        #     axs[i].plot(time_axis, data[:, i], label='Actual Position')
+        #     axs[i].plot(time_axis, data2[:, i], label='Desired Position')
+        #     axs[i].legend()
+        #     axs[i].set_ylabel(labels[i])
+        #     axs[i].grid(True)
+            
+        # axs[-1].set_xlabel('Time (s)')
+        # axs[0].set_title('Tracking Errors Over Time')
+        
+        # print("Saving plot to 'tracking_errors.png'...")
+        # plt.savefig('tracking_errors.png')
+        plt.show()
+        """Plots the error history."""
+        if not self.error:
+            print("No data to plot!")
+            return
+
+        # Convert list to numpy array for easy slicing
+        data = np.array(self.error)
+        data = data[:-1]
+        # Create a time axis (assuming constant steps, or use time_history)
+        time_axis = np.arange(len(data)) * 0.02 # Assuming 50Hz, adjust if needed
+
+        fig, axs = plt.subplots(4, 1, figsize=(10, 12), sharex=True)
+        
+        labels = ['X Error (m)', 'Y Error (m)', 'Z Error (m)', 'Yaw Error (rad)']
+        
+        for i in range(4):
+            axs[i].plot(time_axis, data[:, i])
+            axs[i].set_ylabel(labels[i])
+            axs[i].grid(True)
+            
+        axs[-1].set_xlabel('Time (s)')
+        axs[0].set_title('Tracking Errors Over Time')
+        
+        print("Saving plot to 'tracking_errors.png'...")
+        plt.savefig('tracking_errors.png')
+        plt.show()

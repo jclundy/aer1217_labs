@@ -10,7 +10,9 @@ experiments/arxiv/quadrotor_*/*data/
 results/
 z_docstring.py
 TODOs.md
-
+# Additional files
+.ibynb_checkpoints/*
+lab3/data/image_folder/*.jpg
 
 
 

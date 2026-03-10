@@ -86,10 +86,12 @@ def detect_all_targets(current_img):
     
     return results
 
-
-
 def compute_target_inertial_pose(pose_quad, pixels, camera_mtx, projection_mtx):
     # pose_quad - px, py, pz, qw, qx, qy, qz 
+    (u,v) = pixels
+    fy = camera_mtx[1,1]
+    cy = camera_mtx[1,2]
+
     # Inertial Frame
     vehicle_position = np.array([pose_quad[0], pose_quad[1], pose_quad[2]]).reshape(3,1)
     vehicle_orientation_quat = np.array(pose_quad[3:7])
@@ -100,22 +102,39 @@ def compute_target_inertial_pose(pose_quad, pixels, camera_mtx, projection_mtx):
     zhat = [0,0,-1]
     Pw_hat = R @ zhat
     # 'Camera's World frame'
-    cos_alpha = np.dot(Pw_hat, zhat)
+    cos_beta = np.dot(Pw_hat, zhat)
     Zq = vehicle_position[2] # pz
-    Zw = Zq / cos_alpha
+
+    beta = np.arccos(cos_beta)
 
     fx = camera_mtx[0,0]
     cx = camera_mtx[0,2]
 
-    fy = camera_mtx[1,1]
-    cy = camera_mtx[1,2]
+    alpha1 = np.arctan2(u-cx, fx)
+    alpha2 = np.arctan2(v-cy,fy)
 
-    (u,v) = pixels
+    v1_hat = np.array([np.cos(alpha1), np.sin(alpha1)]).reshape(2,)
+    v2_hat = np.array([np.cos(alpha2), np.sin(alpha2)]).reshape(2,)
+
+    w1 = np.array([v-cy, 0, fy])
+    w2 = np.array([0, u-cx, fx])
+    w_hat = w1 + w2
+    w_hat = w_hat / np.linalg.norm(w_hat)
+    w_hat = w_hat.reshape(3,1)
+
+    cos_alpha = np.dot(v1_hat, v2_hat)
+    alpha= np.arccos(cos_alpha)
+
+    L1 = Zq / np.cos(alpha + beta)
+    Zw = L1 * np.cos(alpha)
+
     Yw = (u-cx)/fx * Zw
     Xw = (v-cy)/fy * Zw
 
     Pw = np.array([Xw,Yw, Zw])
 
+    Pq = vehicle_position
     Pe =  Pq - R @ Pw
+    # Pe2 = Pq - R @ w_hat * L1
 
-    return Pe, Pw
+    return Pe, Pw, alpha, beta

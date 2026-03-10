@@ -3,6 +3,11 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
+from sklearn.cluster import KMeans
+
+###CALIBRATED VALUES
+threshold = 137
+size = 500
 
 ##open photos
 photo_folder = 'Lab3/output_folder'
@@ -20,7 +25,10 @@ pose_data = np.genfromtxt(pose_file, delimiter=',', skip_header=1)
 K = np.matrix([[698.86, 0, 306.91],[0, 699.13, 150.34],[0, 0, 1]])
 d = np.array([0.191887, -0.563680, -0.003676, -0.002037, 0])
 Tcb = np.matrix([[1, -1, 0, 0],[-1, 0, 0, 0],[0, 0, -1, 0],[0, 0, 0, 1]])
-Rcb = Tcb[:3, :3]
+# Rcb = Tcb[:3, :3]
+Rcb = np.array([[0, -1, 0],
+                [-1, 0, 0],
+                [0,  0,-1]])
 
 ##landmark pixel coordinates
 ##must be within x=y= {-2, 2} [m] in body frame
@@ -80,7 +88,13 @@ for i in range(num_photos):
     photo = cv2.GaussianBlur(photo, (5, 5), 0)
     undistorted_photos.append(photo)
     # After Gaussian Blur, create a binary mask using calibrated threshold
-    ret, thresh = cv2.threshold(photo, 120, 255, cv2.THRESH_BINARY)
+    ret, thresh = cv2.threshold(photo, threshold, 255, cv2.THRESH_BINARY)
+    
+    ##if >50% of image is white, error when floor is in frame during take-off while white balance adjusts
+    ##skipping contour detection for this image
+    if np.sum(thresh == 255) > 0.5 * thresh.size:
+        # print(f"Skipping image index {i} due to excessive white pixels (off path)") 
+        continue
 
     # Now find contours on the 'thresh' image
     contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -97,7 +111,7 @@ for i in range(num_photos):
             if parent_idx != -1:
                 
                 # 5. Filter out tiny specks of noise that might be inside the square
-                if cv2.contourArea(contour) > 10: 
+                if cv2.contourArea(contour) > size: 
                     
                     # We found the inner dot! Calculate its circle.
                     (x, y), radius = cv2.minEnclosingCircle(contour)
@@ -107,8 +121,17 @@ for i in range(num_photos):
                     
                     ##transform pixel coordinates to world frame coordinates
                     landmark_w = transform_pixel_to_body_frame(center, Drone_pose, Rbw)
-                    landmark_world.append(landmark_w) #append to list of world coordinates
+                    if landmark_w is not None:
+                        landmark_world.append(landmark_w) #append to list of world coordinates
 
 ##save list of landmark world coordinates to .csv file
 landmark_world_array = np.array(landmark_world)
-np.savetxt('Lab3/landmark_world_coordinates.csv', landmark_world_array, delimiter=',', header='X,Y,Z', comments='')
+# print(f"example landmark world coordinates: {landmark_world_array[:5]}") ##print first 5 for sanity check
+if landmark_world_array.size > 0:
+    scatter_points = np.column_stack((landmark_world_array[:, 0], landmark_world_array[:, 1]))
+    kmeans = KMeans(n_clusters=6, random_state=0).fit(scatter_points)
+    centroids = kmeans.cluster_centers_
+    print("Centroids of the 6 clusters (landmarks):")
+    for idx, centroid in enumerate(centroids):
+        print(f"Landmark {idx}: X = {centroid[0]:.3f}m, Y = {centroid[1]:.3f}m")
+# np.savetxt('Lab3/landmark_world_coordinates.csv', landmark_world_array, delimiter=',', header='X,Y,Z', comments='')

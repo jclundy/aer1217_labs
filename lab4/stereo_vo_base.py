@@ -38,7 +38,7 @@ class VisualOdometry:
         self.des_l_prev = None                           # previous descriptor for key points (left)
         self.kp_r_prev  = None                           # previous key points (right)
         self.des_r_prev = None                           # previoud descriptor key points (right)
-        self.detector = cv.xfeatures2d.SIFT_create()     # using sift for detection
+        self.detector = cv.SIFT_create()     # using sift for detection
         self.feature_color = (255, 191, 0)
         self.inlier_color = (32,165,218)
 

@@ -24,6 +24,15 @@ class StereoCamera:
         self.cu = cu
         self.cv = cv
 
+    def inverse_stereo_model(self, ul, vl, ur, vr):
+        rho = np.zeros((len(ul),3))
+        scale = self.baseline / (ul - ur)
+        rho[:, 0] = 0.5 * (ul + ur) - self.cu
+        rho[:, 1] = self.fx/self.fy * (0.5 * (vl + vr) - self.cv)
+        rho[: 2] = self.fx 
+        rho *= scale.reshape(-1,1)
+        return rho
+
 class VisualOdometry:
     def __init__(self, cam):
         self.frame_stage = 0
@@ -120,16 +129,35 @@ class VisualOdometry:
         # feature in right img (without filtering)
         f_r_prev, f_r_cur = features_coor[:,2:4], features_coor[:,6:8]
         # ------------- start your code here -------------- #
-        
-        
-        
-        
-        
-        
-        
+        f_l_prev, f_l_cur = features_coor[:,0:2], features_coor[:,4:6]
+
+        # Inverse stereo model to 3D points from previous frame and curretn frame
+        ul_prev = f_l_prev[:,0]
+        vl_prev = f_l_prev[:,1]
+        ur_prev = f_r_prev[:,0]
+        vr_prev = f_r_prev[:,1]
+        points_prev = self.cam.inverse_stereo_model(ul_prev, vl_prev, ur_prev, vr_prev)
+
+        ul_cur = f_l_cur[:,0]
+        vl_cur = f_l_cur[:,1]
+        ur_cur = f_r_cur[:,0]
+        vr_cur = f_r_cur[:,1]
+        points_cur = self.cam.inverse_stereo_model(ul_cur, vl_cur, ur_cur, vr_cur)
+
+        print("features_coor.shape", features_coor.shape)
+
+        inlier_indices = get_ransac_inlier_indices(points_prev, points_cur, iterations=5, error_threshold=0.5, samples_per_iteration=3)
+
+        print("obtained inlier indices from ransac")
+        print("Num points {}, and num inliers {}".format( features_coor.shape[0],len(inlier_indices)))
+
+        inlier_prev = points_prev[inlier_indices]
+        inlier_cur = points_cur[inlier_indices]
+
+        C, r = compute_model(inlier_prev, inlier_cur)
         # replace (1) the dummy C and r to the estimated C and r. 
         #         (2) the original features to the filtered features
-        return C, r, f_r_prev, f_r_cur
+        return C, r, f_r_prev[inlier_indices], f_r_cur[inlier_indices]
     
     def processFirstFrame(self, img_left, img_right):
         kp_l, des_l, feature_l_img = self.feature_detection(img_left)
@@ -214,4 +242,60 @@ class VisualOdometry:
         
         return frame_left, frame_right 
 
+def compute_model(points_a, points_b):
+    # compute averages
+    pa = np.mean(points_a, axis=0)
+    pb = np.mean(points_b, axis=0)
 
+    # sum of weights is equal to num points
+    N = points_a.shape[0]
+    w = N
+
+    # compute differences
+    pb_diff = points_b - pb
+    pa_diff = points_a - pa
+
+    # Sum up weighted average differences should be 3x3
+    W_ba = 1/float(w)* pa_diff.T @ pb_diff
+
+    # Singular value decomposition
+    U, _, V_T = np.linalg.svd(W_ba, full_matrices=True)
+    # 4) Final rotation and translation
+    S = np.eye(3,3)
+    S[2,2] = np.linalg.det(U) * np.linalg.det(V_T)
+
+    # Compute rotation
+    C_ba = V_T.T @ S @ U.T
+
+    # Compute translation
+    r_ba = -C_ba.T @ pb + pa
+
+    return C_ba, r_ba
+
+def get_ransac_inlier_indices(points_prev, points_cur, iterations=10, error_threshold=0.1, samples_per_iteration=3):
+    N = points_prev.shape[0]
+    final_inliers = []
+
+    for i in range(0, iterations):
+        indices = np.random.randint(0,N, (samples_per_iteration,1))
+        points_a = points_prev[indices].reshape(-1, 3)
+        points_b = points_cur[indices].reshape(-1,3)
+
+        C_ba, r_ba = compute_model(points_a, points_b)
+
+        points_cur_predicted = C_ba @ points_prev.T + r_ba.reshape(3,1)
+        prediction_error = np.linalg.norm(points_cur - points_cur_predicted.T, axis=1)
+
+        max_error = np.max(prediction_error)
+        min_error =  np.min(prediction_error)
+        median_error = np.median(prediction_error)
+        print("max prediction_error {:.2f}, median error {:.2f}, min prediction error  {:.2f}".format(max_error, median_error, min_error))
+
+        threshold = median_error * 1.1
+        inlier_indices = np.argwhere(prediction_error < threshold).flatten()
+        inlier_count = len(inlier_indices)
+
+        if(inlier_count > len(final_inliers)):
+            final_inliers = inlier_indices
+
+    return final_inliers

@@ -30,7 +30,6 @@ class StereoCamera:
         rho[:, 0] = (0.5 * (ul + ur) - self.cu) * scale
         rho[:, 1] = (self.fx/self.fy * (0.5 * (vl + vr) - self.cv))* scale
         rho[:, 2] = self.fx * scale
-        # rho * = scale.reshape(-1,1)
         return rho
 
 class VisualOdometry:
@@ -144,19 +143,14 @@ class VisualOdometry:
         vr_cur = f_r_cur[:,1]
         points_cur = self.cam.inverse_stereo_model(ul_cur, vl_cur, ur_cur, vr_cur)
 
-        print("features_coor.shape", features_coor.shape)
-
+        # Run RANSAC to get indices of inlier points
         inlier_indices = get_ransac_inlier_indices(points_prev, points_cur, iterations=20, error_threshold=0.5, samples_per_iteration=3)
-
-        print("obtained inlier indices from ransac")
-        print("Num points {}, and num inliers {}".format( features_coor.shape[0],len(inlier_indices)))
 
         inlier_prev = points_prev[inlier_indices]
         inlier_cur = points_cur[inlier_indices]
 
+        # Compute camera pose with inliers
         C, r = compute_model(inlier_prev, inlier_cur)
-        # replace (1) the dummy C and r to the estimated C and r. 
-        #         (2) the original features to the filtered features
         return C, r, f_r_prev[inlier_indices], f_r_cur[inlier_indices]
     
     def processFirstFrame(self, img_left, img_right):
@@ -287,12 +281,6 @@ def get_ransac_inlier_indices(points_prev, points_cur, iterations=10, error_thre
         points_cur_predicted = C_ba @ points_prev.T + r_ba.reshape(3,1)
         prediction_error = np.linalg.norm(points_cur - points_cur_predicted.T, axis=1)
 
-        max_error = np.max(prediction_error)
-        min_error =  np.min(prediction_error)
-        median_error = np.median(prediction_error)
-        print("max prediction_error {:.2f}, median error {:.2f}, min prediction error  {:.2f}".format(max_error, median_error, min_error))
-
-        # threshold = median_error * 1.1
         inlier_indices = np.argwhere(prediction_error < error_threshold).flatten()
         inlier_count = len(inlier_indices)
 

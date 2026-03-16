@@ -27,10 +27,10 @@ class StereoCamera:
     def inverse_stereo_model(self, ul, vl, ur, vr):
         rho = np.zeros((len(ul),3))
         scale = self.baseline / (ul - ur)
-        rho[:, 0] = 0.5 * (ul + ur) - self.cu
-        rho[:, 1] = self.fx/self.fy * (0.5 * (vl + vr) - self.cv)
-        rho[: 2] = self.fx 
-        rho *= scale.reshape(-1,1)
+        rho[:, 0] = (0.5 * (ul + ur) - self.cu) * scale
+        rho[:, 1] = (self.fx/self.fy * (0.5 * (vl + vr) - self.cv))* scale
+        rho[:, 2] = self.fx * scale
+        # rho * = scale.reshape(-1,1)
         return rho
 
 class VisualOdometry:
@@ -146,7 +146,7 @@ class VisualOdometry:
 
         print("features_coor.shape", features_coor.shape)
 
-        inlier_indices = get_ransac_inlier_indices(points_prev, points_cur, iterations=5, error_threshold=0.5, samples_per_iteration=3)
+        inlier_indices = get_ransac_inlier_indices(points_prev, points_cur, iterations=20, error_threshold=0.5, samples_per_iteration=3)
 
         print("obtained inlier indices from ransac")
         print("Num points {}, and num inliers {}".format( features_coor.shape[0],len(inlier_indices)))
@@ -269,10 +269,11 @@ def compute_model(points_a, points_b):
 
     # Compute translation
     r_ba = -C_ba.T @ pb + pa
+    # r_ab = -C_ba @ pa + pb
 
-    return C_ba, r_ba
+    return C_ba, -C_ba @ r_ba
 
-def get_ransac_inlier_indices(points_prev, points_cur, iterations=10, error_threshold=0.1, samples_per_iteration=3):
+def get_ransac_inlier_indices(points_prev, points_cur, iterations=10, error_threshold=0.5, samples_per_iteration=3):
     N = points_prev.shape[0]
     final_inliers = []
 
@@ -291,8 +292,8 @@ def get_ransac_inlier_indices(points_prev, points_cur, iterations=10, error_thre
         median_error = np.median(prediction_error)
         print("max prediction_error {:.2f}, median error {:.2f}, min prediction error  {:.2f}".format(max_error, median_error, min_error))
 
-        threshold = median_error * 1.1
-        inlier_indices = np.argwhere(prediction_error < threshold).flatten()
+        # threshold = median_error * 1.1
+        inlier_indices = np.argwhere(prediction_error < error_threshold).flatten()
         inlier_count = len(inlier_indices)
 
         if(inlier_count > len(final_inliers)):

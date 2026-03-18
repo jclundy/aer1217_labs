@@ -7,3 +7,11 @@ the 6 targets.
 
 INPUTS - photo folder and pose .csv file locations to be updated in the first cell to match your INPUTS
 OUTPUTS - csv file with all target locations, and the final 6 target locations will be printed after the last cell is run
+
+Requirements:
+- numpy
+- scipy
+- notebook
+- scikit-image ?
+- matplotlib
+- opencv-python

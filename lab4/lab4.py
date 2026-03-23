@@ -72,7 +72,10 @@ def main():
 
     T_cam_center_to_imu = np.linalg.inv(T_imu_to_cam_center)
     
-    # initialization offset: The ground truth data of the vehicle starts with (0, 0, 0) in GPS/IMU frame. But in the VO estimation, we set initial position of the stereo-camera's center as (0,0,0) using initial r. Therefore, we convert the ground truth data to camera center position in GPS frame with (0, 0, 0) as the initial position.  The convertion is done by translation vector t_cv_v.
+    # initialization offset: The ground truth data of the vehicle starts with (0, 0, 0) in GPS/IMU frame. 
+    # But in the VO estimation, we set initial position of the stereo-camera's center as (0,0,0) using initial r. 
+    # Therefore, we convert the ground truth data to camera center position in GPS frame with (0, 0, 0) as the initial position. 
+    # The convertion is done by translation vector t_cv_v.
 
     # translation from vehicle frame to camera center frame expressed in vehicle frame (from Kitti website)
     t_cv_v = np.array([1.09, -0.32-0.537/2.0, 0.8])

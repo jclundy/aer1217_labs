@@ -134,6 +134,12 @@ def main():
     plt.title(r"Trajectory of the vehicle", fontsize=13, fontweight=0, color='black', style='italic', y=1.02 )
     plt.show()
 
+    estimated_pose = T_vehicle[:,0:3,3].reshape(-1,3)
+    norm_error = np.linalg.norm(cam_center_gt - estimated_pose, axis=1)
+    rmse = np.sqrt(np.mean(norm_error**2))
+    print("RMSE={:.3f}".format(rmse))
+
+
 if __name__ == '__main__':
     print('We are using OpenCV version {}'.format(cv.__version__))
     main()

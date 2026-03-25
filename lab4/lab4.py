@@ -86,8 +86,8 @@ def main():
 
     # record video
     os.chdir(cwd)
-    fourcc = cv.VideoWriter_fourcc(*'MPEG')
-    video = cv.VideoWriter('./video.avi', fourcc, 5.0, (1242, 775))  # 375*2 + 25 (margin)
+    # fourcc = cv.VideoWriter_fourcc(*'MPEG')
+    # video = cv.VideoWriter('./video.avi', fourcc, 5.0, (1242, 775))  # 375*2 + 25 (margin)
 
     for img_id in range(sequence_num):
         img_left  = cv.imread(cwd + path_0 + str(img_id).zfill(zero_num) + '.png', 0)
@@ -110,17 +110,22 @@ def main():
         # convert to vehicle frame
         T_vehicle[img_id] = T_cam_center_to_imu.dot(np.linalg.inv(T_hist[img_id]))
         
-        cv.imshow('Visual Odometry', vertical_frame)
-        video.write(vertical_frame)
-        if cv.waitKey(10) & 0xFF == ord('q'):
-            break
+        # cv.imshow('Visual Odometry', vertical_frame)
+        # video.write(vertical_frame)
+        # if cv.waitKey(10) & 0xFF == ord('q'):
+        #     break
         
     print("VO ends\n")
-    video.release()
-    cv.destroyAllWindows()
+    # video.release()
+    # cv.destroyAllWindows()
     
     # save the estimated transformation matrix 
     np.save('VO_T.npy', T_vehicle)
+
+    estimated_pose = T_vehicle[:,0:3,3].reshape(-1,3)
+    norm_error = np.linalg.norm(cam_center_gt - estimated_pose, axis=1)
+    rmse = np.sqrt(np.mean(norm_error**2))
+    print("RMSE={:.3f}".format(rmse))
 
     fig_traj = plt.figure(facecolor = "white")
     ax_t = fig_traj.add_subplot(111, projection = '3d')

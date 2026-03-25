@@ -38,7 +38,7 @@ class VisualOdometry:
         self.des_l_prev = None                           # previous descriptor for key points (left)
         self.kp_r_prev  = None                           # previous key points (right)
         self.des_r_prev = None                           # previoud descriptor key points (right)
-        self.detector = cv.xfeatures2d.SIFT_create()     # using sift for detection
+        self.detector = cv.SIFT_create()     # using sift for detection
         self.feature_color = (255, 191, 0)
         self.inlier_color = (32,165,218)
 
@@ -130,7 +130,8 @@ class VisualOdometry:
     def svd_alignment(self, pts_a, pts_b):
         # Inverse-depth-squared weights: nearby points (small Z) are triangulated
         # more accurately so they contribute more to the alignment (eq. 2)
-        w  = 1.0 / (pts_a[:,2]**2 + 1e-6)
+        max_dist = 7
+        w  = 1.0 - np.tanh(pts_a[:,2]/max_dist)
         w /= w.sum()                          # normalise weights to sum to 1
 
         # Weighted centroids of each point cloud (eq. 2)
@@ -148,7 +149,7 @@ class VisualOdometry:
         r = mu_b - C @ mu_a
         return C, r
 
-    def ransac(self, pts_a, pts_b, fc, n_iter=500, thresh=0.03):
+    def ransac(self, pts_a, pts_b, fc, n_iter=20, thresh=0.3):
         N = len(pts_a)
         best_mask, best_count = np.ones(N, dtype=bool), 0
 
@@ -163,7 +164,7 @@ class VisualOdometry:
             # Apply candidate model to all points and compute depth-normalised residual
             # Dividing by Z makes the threshold scale-invariant across the depth range
             pred = (C_c @ pts_a.T).T + r_c
-            err  = np.linalg.norm(pts_b - pred, axis=1) / np.maximum(pts_a[:,2], 1.0)
+            err  = np.linalg.norm(pts_b - pred, axis=1)
 
             # Points within threshold are inliers — consistent with the candidate motion
             mask = err < thresh

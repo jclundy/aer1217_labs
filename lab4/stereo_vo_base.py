@@ -24,14 +24,6 @@ class StereoCamera:
         self.cu = cu
         self.cv = cv
 
-    def inverse_stereo_model(self, ul, vl, ur, vr):
-        rho = np.zeros((len(ul),3))
-        scale = self.baseline / (ul - ur)
-        rho[:, 0] = (0.5 * (ul + ur) - self.cu) * scale
-        rho[:, 1] = (self.fx/self.fy * (0.5 * (vl + vr) - self.cv))* scale
-        rho[:, 2] = self.fx * scale
-        return rho
-
 class VisualOdometry:
     def __init__(self, cam):
         self.frame_stage = 0
@@ -46,7 +38,7 @@ class VisualOdometry:
         self.des_l_prev = None                           # previous descriptor for key points (left)
         self.kp_r_prev  = None                           # previous key points (right)
         self.des_r_prev = None                           # previoud descriptor key points (right)
-        self.detector = cv.SIFT_create()     # using sift for detection
+        self.detector = cv.xfeatures2d.SIFT_create()     # using sift for detection
         self.feature_color = (255, 191, 0)
         self.inlier_color = (32,165,218)
 
@@ -120,7 +112,72 @@ class VisualOdometry:
         # features_coor:
         #   prev_l_x, prev_l_y, prev_r_x, prev_r_y, cur_l_x, cur_l_y, cur_r_x, cur_r_y
         return features_coor
-    
+
+    def triangulate(self, fc):
+        # Camera intrinsics and baseline distance between left and right cameras
+        fx, fy, cu, cv_p, b = self.cam.fx, self.cam.fy, self.cam.cu, self.cam.cv, self.cam.baseline
+
+        def unproject(ul, vl, ur):
+            # Disparity d = horizontal pixel difference between left and right images
+            # Depth Z recovered from the stereo equation: Z = fx * baseline / d
+            # X, Y recovered by inverting the pinhole projection: X = (u - cu) * Z / fx
+            Z = fx * b / (ul - ur)
+            return np.column_stack([(ul - cu) * Z / fx, (vl - cv_p) * Z / fy, Z])
+
+        # pts_a: 3D point cloud from previous frame, pts_b: from current frame
+        return unproject(fc[:,0], fc[:,1], fc[:,2]), unproject(fc[:,4], fc[:,5], fc[:,6])
+
+    def svd_alignment(self, pts_a, pts_b):
+        # Inverse-depth-squared weights: nearby points (small Z) are triangulated
+        # more accurately so they contribute more to the alignment (eq. 2)
+        w  = 1.0 / (pts_a[:,2]**2 + 1e-6)
+        w /= w.sum()                          # normalise weights to sum to 1
+
+        # Weighted centroids of each point cloud (eq. 2)
+        mu_a, mu_b = w @ pts_a, w @ pts_b
+
+        # Cross-covariance matrix W between the two centred point clouds (eq. 3)
+        W = ((pts_b - mu_b) * w[:,None]).T @ (pts_a - mu_a)
+
+        # SVD decomposition of W (eq. 4) — note: numpy gives W = U S Vt
+        U, _, Vt = np.linalg.svd(W)
+
+        # Rotation C_ba: det correction ensures proper rotation (no reflection) (eq. 5)
+        C = U @ np.diag([1., 1., np.linalg.det(Vt.T) * np.linalg.det(U)]) @ Vt
+        # Translation r: displacement of centroid after applying rotation (eq. 5)
+        r = mu_b - C @ mu_a
+        return C, r
+
+    def ransac(self, pts_a, pts_b, fc, n_iter=500, thresh=0.03):
+        N = len(pts_a)
+        best_mask, best_count = np.ones(N, dtype=bool), 0
+
+        for _ in range(n_iter):
+            # Randomly sample 3 point pairs — minimum needed to fit a rigid-body model
+            idx = np.random.choice(N, 3, replace=False)
+            try:
+                C_c, r_c = self.svd_alignment(pts_a[idx], pts_b[idx])
+            except np.linalg.LinAlgError:
+                continue
+
+            # Apply candidate model to all points and compute depth-normalised residual
+            # Dividing by Z makes the threshold scale-invariant across the depth range
+            pred = (C_c @ pts_a.T).T + r_c
+            err  = np.linalg.norm(pts_b - pred, axis=1) / np.maximum(pts_a[:,2], 1.0)
+
+            # Points within threshold are inliers — consistent with the candidate motion
+            mask = err < thresh
+            if mask.sum() > best_count:
+                best_count, best_mask = mask.sum(), mask
+
+        if best_count < 3:
+            best_mask = np.ones(N, dtype=bool)
+
+        # Final re-estimation using all inliers (not just the 3-point sample)
+        C, r = self.svd_alignment(pts_a[best_mask], pts_b[best_mask])
+        # Return inlier right-image pixel coords for visualisation on right frame
+        return C, r, fc[best_mask, 2:4], fc[best_mask, 6:8]
+
     def pose_estimation(self, features_coor):
         # dummy C and r
         C = np.eye(3)
@@ -128,30 +185,23 @@ class VisualOdometry:
         # feature in right img (without filtering)
         f_r_prev, f_r_cur = features_coor[:,2:4], features_coor[:,6:8]
         # ------------- start your code here -------------- #
-        f_l_prev, f_l_cur = features_coor[:,0:2], features_coor[:,4:6]
 
-        # Inverse stereo model to 3D points from previous frame and curretn frame
-        ul_prev = f_l_prev[:,0]
-        vl_prev = f_l_prev[:,1]
-        ur_prev = f_r_prev[:,0]
-        vr_prev = f_r_prev[:,1]
-        points_prev = self.cam.inverse_stereo_model(ul_prev, vl_prev, ur_prev, vr_prev)
+        # 1: inverse stereo camera model — pixel matches -> 3D point clouds
+        pts_a, pts_b = self.triangulate(features_coor)
 
-        ul_cur = f_l_cur[:,0]
-        vl_cur = f_l_cur[:,1]
-        ur_cur = f_r_cur[:,0]
-        vr_cur = f_r_cur[:,1]
-        points_cur = self.cam.inverse_stereo_model(ul_cur, vl_cur, ur_cur, vr_cur)
+        # 2: RANSAC outlier rejection + 3: SVD point cloud alignment
+        C, r_b, f_r_prev, f_r_cur = self.ransac(pts_a, pts_b, features_coor)
 
-        # Run RANSAC to get indices of inlier points
-        inlier_indices = get_ransac_inlier_indices(points_prev, points_cur, iterations=20, error_threshold=0.5, samples_per_iteration=3)
+        # r_b is expressed in the current frame b; rotate into previous frame a
+        r = C.T @ r_b
 
-        inlier_prev = points_prev[inlier_indices]
-        inlier_cur = points_cur[inlier_indices]
+        # If estimate exceeds 2m, reuse previous frame to avoid corrupting trajectory
+        if np.linalg.norm(r) > 2.0:
+            C, r = self.C.copy(), self.r.flatten().copy()
 
-        # Compute camera pose with inliers
-        C, r = compute_model(inlier_prev, inlier_cur)
-        return C, r, f_r_prev[inlier_indices], f_r_cur[inlier_indices]
+        # replace (1) the dummy C and r to the estimated C and r. 
+        #         (2) the original features to the filtered features
+        return C, r, f_r_prev, f_r_cur
     
     def processFirstFrame(self, img_left, img_right):
         kp_l, des_l, feature_l_img = self.feature_detection(img_left)
@@ -235,56 +285,3 @@ class VisualOdometry:
         self.last_frame_right= self.new_frame_right
         
         return frame_left, frame_right 
-
-def compute_model(points_a, points_b):
-    # compute averages
-    pa = np.mean(points_a, axis=0)
-    pb = np.mean(points_b, axis=0)
-
-    # sum of weights is equal to num points
-    N = points_a.shape[0]
-    w = N
-
-    # compute differences
-    pb_diff = points_b - pb
-    pa_diff = points_a - pa
-
-    # Sum up weighted average differences should be 3x3
-    W_ba = 1/float(w)* pa_diff.T @ pb_diff
-
-    # Singular value decomposition
-    U, _, V_T = np.linalg.svd(W_ba, full_matrices=True)
-    # 4) Final rotation and translation
-    S = np.eye(3,3)
-    S[2,2] = np.linalg.det(U) * np.linalg.det(V_T)
-
-    # Compute rotation
-    C_ba = V_T.T @ S @ U.T
-
-    # Compute translation
-    r_ba = -C_ba.T @ pb + pa
-    # r_ab = -C_ba @ pa + pb
-
-    return C_ba, -C_ba @ r_ba
-
-def get_ransac_inlier_indices(points_prev, points_cur, iterations=10, error_threshold=0.5, samples_per_iteration=3):
-    N = points_prev.shape[0]
-    final_inliers = []
-
-    for i in range(0, iterations):
-        indices = np.random.randint(0,N, (samples_per_iteration,1))
-        points_a = points_prev[indices].reshape(-1, 3)
-        points_b = points_cur[indices].reshape(-1,3)
-
-        C_ba, r_ba = compute_model(points_a, points_b)
-
-        points_cur_predicted = C_ba @ points_prev.T + r_ba.reshape(3,1)
-        prediction_error = np.linalg.norm(points_cur - points_cur_predicted.T, axis=1)
-
-        inlier_indices = np.argwhere(prediction_error < error_threshold).flatten()
-        inlier_count = len(inlier_indices)
-
-        if(inlier_count > len(final_inliers)):
-            final_inliers = inlier_indices
-
-    return final_inliers

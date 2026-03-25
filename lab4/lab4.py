@@ -122,6 +122,12 @@ def main():
     video.release()
     cv.destroyAllWindows()
     
+    estimated_pose = T_vehicle[:,0:3,3].reshape(-1,3)
+    norm_error = np.linalg.norm(cam_center_gt - estimated_pose, axis=1)
+    rmse = np.sqrt(np.mean(norm_error**2))
+    print("RMSE={:.3f}".format(rmse))
+
+
     # save the estimated transformation matrix 
     np.save('VO_T.npy', T_vehicle)
 

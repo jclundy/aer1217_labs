@@ -1,6 +1,6 @@
 """Write your proposed algorithm.
-[NOTE]: The idea for the final project is to plan the trajectory based on a sequence of gates 
-while considering the uncertainty of the obstacles. The students should show that the proposed 
+[NOTE]: The idea for the final project is to plan the trajectory based on a sequence of gates
+while considering the uncertainty of the obstacles. The students should show that the proposed
 algorithm is able to safely navigate a quadrotor to complete the task in both simulation and
 real-world experiments.
 
@@ -39,6 +39,7 @@ except ImportError:
 #########################
 # REPLACE THIS (START) ##
 #########################
+from trajectory_generators import circle_trajectory_generator, hardcoded_trajectory_generator
 
 # Optionally, create and import modules you wrote.
 # Please refrain from importing large or unstable 3rd party packages.
@@ -51,6 +52,8 @@ except ImportError:
 #########################
 # REPLACE THIS (END) ####
 #########################
+
+
 
 class Controller():
     """Template controller class.
@@ -90,7 +93,7 @@ class Controller():
         self.BUFFER_SIZE = buffer_size
 
         # Store a priori scenario information.
-        # plan the trajectory based on the information of the (1) gates and (2) obstacles. 
+        # plan the trajectory based on the information of the (1) gates and (2) obstacles.
         self.NOMINAL_GATES = initial_info["nominal_gates_pos_and_type"]
         self.NOMINAL_OBSTACLES = initial_info["nominal_obstacles_pos"]
 
@@ -99,7 +102,7 @@ class Controller():
             self.ctrl = None
         else:
             # Initialize a simple PID Controller for debugging and test.
-            # Do NOT use for the IROS 2022 competition. 
+            # Do NOT use for the IROS 2022 competition.
             self.ctrl = PIDController()
             # Save additonal environment parameters.
             self.KF = initial_info["quadrotor_kf"]
@@ -121,92 +124,59 @@ class Controller():
 
     def planning(self, use_firmware, initial_info):
         """Trajectory planning algorithm"""
-    
+        #########################
+        # REPLACE THIS (START) ##
+        #########################
         ## generate waypoints for planning
-        max_climb = 2 * 1 #m/s
-        max_forward = 2#m/s
-        max_descent = 0.5 #m/s
-        climb_height = 1
+
+        # Call a function in module `example_custom_utils`.
+        ecu.exampleFunction()
+
+        # initial waypoint
+        if use_firmware:
+            waypoints = [(self.initial_obs[0], self.initial_obs[2], initial_info["gate_dimensions"]["tall"]["height"])]  # Height is hardcoded scenario knowledge.
+        else:
+            waypoints = [(self.initial_obs[0], self.initial_obs[2], self.initial_obs[4])]
+
+        duration = 6
         radius = 1
-        circle_center = [0,-3,1]
+        # ref_state = circle_trajectory_generator(self.initial_obs, radius, duration, self.CTRL_FREQ)
+        ref_state = hardcoded_trajectory_generator(self.initial_obs, initial_info, self.CTRL_FREQ, duration)
 
-        waypoints = []
+        ref_pos = ref_state[:, 0:3]
+        ref_x = ref_pos[:,0]
+        ref_y = ref_pos[:,1]
+        ref_z = ref_pos[:,2]
+
+        ref_vel = ref_state[:, 3:6]
+        ref_acc = ref_state[:, 6:9]
+        ref_euler = ref_state[:,9:12]
+        ref_body_rates = ref_state[:,12:15]
 
 
-        wp0 = (-1,-3,0)
-        wp1 = (-1,-3,climb_height)
-        waypoints.append(wp0)
-        waypoints.append(wp1)
-        waypoints.append((0, -4, 1))
-        waypoints.append((1,-3,1))
-        waypoints.append((0,-2,1))
-        waypoints.append(wp1)
-        waypoints.append(wp0)
+        ref_length = len(ref_x)
+        num_wpts = 8
+        for i in range(0, num_wpts):
+            wpt_idx = int(ref_length * (i+1) / num_wpts)-1
+            waypoints.append((ref_x[wpt_idx], ref_y[wpt_idx], ref_z[wpt_idx]))
 
-        # Polynomial fit.
         self.waypoints = np.array(waypoints)
+        t = np.arange(self.waypoints.shape[0])
+        t_scaled = np.linspace(t[0], t[-1], int(duration*self.CTRL_FREQ))
+        self.ref_x = np.array(ref_x).flatten()
+        self.ref_y = np.array(ref_y).flatten()
+        self.ref_z = np.array(ref_z).flatten()
 
-        climb_duration = (climb_height)/max_climb
-        curve1_z = np.linspace(0,climb_height, int(climb_duration*self.CTRL_FREQ))
-        curve1_x = np.ones((len(curve1_z),)) * wp0[0]
-        curve1_y = np.ones((len(curve1_z),)) * wp0[1]
+        self.ref_vel = ref_vel
+        self.ref_acc = ref_acc
+        self.ref_euler = ref_euler
+        self.ref_euler_rates = ref_body_rates
 
-        curve1_zd = max_climb * np.ones((len(curve1_z),))
-        curve1_xd = 0 * np.ones((len(curve1_z),))
-        curve1_yd = 0 * np.ones((len(curve1_z),))
+        print(self.ref_x.shape)
 
-        circumference = 2*np.pi*radius
-        circle_duration = circumference / max_forward
-        curve2_th = np.linspace(np.pi, -np.pi, int(circle_duration*self.CTRL_FREQ))
-        curve2_x = np.cos(curve2_th) * radius + circle_center[0]
-        curve2_y = np.sin(curve2_th) * radius + circle_center[1]
-        curve2_z = np.ones((len(curve2_th)),) * climb_height
-
-        curve2_zd = 0 * np.ones((len(curve2_th),))
-        curve2_xd = max_forward * np.cos(curve2_th + np.pi/2)
-        curve2_yd = max_forward * np.sin(curve2_th + np.pi/2)
-
-        descent_duration = climb_height / max_descent
-        curve3_z = np.linspace(climb_height,0, int(descent_duration*self.CTRL_FREQ))
-        curve3_x = np.ones((len(curve3_z),)) * curve2_x[-1]
-        curve3_y = np.ones((len(curve3_z),)) * curve2_y[-1]
-
-        curve3_zd = -max_descent * np.ones((len(curve3_z),))
-        curve3_xd = 0 * np.ones((len(curve3_z),))
-        curve3_yd = 0 * np.ones((len(curve3_z),))
-
-        rx = np.concatenate((curve1_x, curve2_x, curve3_x),axis=0)
-        ry = np.concatenate((curve1_y, curve2_y, curve3_y),axis=0)
-        rz = np.concatenate((curve1_z, curve2_z, curve3_z),axis=0)
-
-
-        rxd = np.concatenate((curve1_xd, curve2_xd, curve3_xd),axis=0)
-        ryd = np.concatenate((curve1_yd, curve2_yd, curve3_yd),axis=0)
-        rzd = np.concatenate((curve1_zd, curve2_zd, curve3_zd),axis=0)
-
-        # total_duration = climb_duration +  circle_duration + descent_duration
-        t_scaled = np.linspace(0, len(rx)/self.CTRL_FREQ, len(rx))
-        yaw = np.zeros((len(rx),))
-        yaw_start = int(climb_duration*self.CTRL_FREQ)
-        yaw_end = yaw_start + int(circle_duration*self.CTRL_FREQ)
-        print("yaw len", len(yaw))
-        print("th len", len(curve2_th))
-        print("yaw_start - yaw_end", yaw_end - yaw_start)
-        print(len(yaw[yaw_start:yaw_end]))
-
-        print("yaw start:" , yaw_start)
-        yaw[yaw_start:yaw_end] = curve2_th + np.pi / 2
-        
-        yaw[0:yaw_start] = curve2_th[0] + np.pi / 2
-        yaw[yaw_end:-1] = curve2_th[-1] + np.pi / 2
-        self.ref_x = rx
-        self.ref_y = ry
-        self.ref_z = rz
-
-        self.ref_xd = rxd
-        self.ref_yd = ryd
-        self.ref_zd = rzd
-        self.ref_yaw = yaw
+        #########################
+        # REPLACE THIS (END) ####
+        #########################
 
         return t_scaled
 
@@ -239,8 +209,8 @@ class Controller():
         if self.ctrl is not None:
             raise RuntimeError("[ERROR] Using method 'cmdFirmware' but Controller was created with 'use_firmware' = False.")
 
-        # [INSTRUCTIONS] 
-        # self.CTRL_FREQ is 30 (set in the getting_started.yaml file) 
+        # [INSTRUCTIONS]
+        # self.CTRL_FREQ is 30 (set in the getting_started.yaml file)
         # control input iteration indicates the number of control inputs sent to the quadrotor
         iteration = int(time*self.CTRL_FREQ)
 
@@ -251,67 +221,66 @@ class Controller():
         # print("The info. of the gates ")
         # print(self.NOMINAL_GATES)
 
-        # if iteration >= len(self.ref_x):
-        #     command_type = Command(0)  # None.
-        #     args = []
-        # else :
-        #     x = self.ref_x[iteration]
-        #     y = self.ref_y[iteration]
-        #     z = self.ref_z[iteration]
-        #     yaw = 0.
-        #     duration = 1/self.CTRL_FREQ
+        if iteration == 0:
+            height = 1
+            duration = 2
 
-        #     command_type = Command(5)  # goTo.
-        #     args = [[x, y, z], yaw, duration, False]
+            command_type = Command(2)  # Take-off.
+            args = [height, duration]
 
-        command_type = Command(0)  # None.
-        args = []
+        # [INSTRUCTIONS] Example code for using cmdFullState interface
+        elif iteration >= 3*self.CTRL_FREQ and iteration < 20*self.CTRL_FREQ:
+            step = min(iteration-3*self.CTRL_FREQ, len(self.ref_x) -1)
 
-        # if iteration == 0:
-        #     height = 1
-        #     duration = 2
-
-        #     command_type = Command(2)  # Take-off.
-        #     args = [height, duration]
-        # elif iteration == 2 * self.CTRL_FREQ:
-        #     x = -1 #self.ref_x[-1]
-        #     y = -3 #self.ref_y[-1]
-        #     z = 1 
-        #     yaw = 0.
-        #     duration = 2.5
-
-        #     command_type = Command(5)  # goTo.
-        #     args = [[x, y, z], yaw, duration, False]
-        # elif iteration == 4.5 * self.CTRL_FREQ:
-        #     height = 0.
-        #     duration = 3
-
-        #     command_type = Command(3)  # Land.
-        #     args = [height, duration]
-        # elif iteration == 7.5 * self.CTRL_FREQ:
-        #     command_type = Command(4) # STOP command
-        #     args = []
-
-        # elif iteration == 8 * self.CTRL_FREQ:
-        #     command_type = Command(0) # None
-        #     args = []
-
-        if iteration < len(self.ref_x):
-            target_pos = np.array([self.ref_x[iteration], self.ref_y[iteration], self.ref_z[iteration]])
-            target_vel = np.array([self.ref_xd[iteration], self.ref_yd[iteration], self.ref_zd[iteration]])
-            target_acc = np.zeros(3)
-            target_yaw = self.ref_yaw[iteration]
-            target_rpy_rates = np.zeros(3)
+            target_pos = np.array([self.ref_x[step], self.ref_y[step], self.ref_z[step]])
+            # target_pos = x_star[0:3].flatten()
+            target_vel = self.ref_vel[step].flatten()
+            target_acc = self.ref_acc[step].flatten()
+            target_yaw = self.ref_euler[step,2]
+            target_rpy_rates = self.ref_euler_rates[step]
 
             command_type = Command(1)  # cmdFullState.
             args = [target_pos, target_vel, target_acc, target_yaw, target_rpy_rates]
-        elif iteration == len(self.ref_x):
-            command_type = Command(4) # STOP command
-            args = []
-        # else:
-        #     command_type = Command(0)  # None.
-        #     args = []
 
+        elif iteration == 20*self.CTRL_FREQ:
+            command_type = Command(6)  # Notify setpoint stop.
+            args = []
+
+       # [INSTRUCTIONS] Example code for using goTo interface
+        elif iteration == 20*self.CTRL_FREQ+1:
+            x = self.ref_x[-1]
+            y = self.ref_y[-1]
+            z = 1.5
+            yaw = 0.
+            duration = 2.5
+
+            command_type = Command(5)  # goTo.
+            args = [[x, y, z], yaw, duration, False]
+
+        elif iteration == 23*self.CTRL_FREQ:
+            x = self.initial_obs[0]
+            y = self.initial_obs[2]
+            z = 1.5
+            yaw = 0.
+            duration = 6
+
+            command_type = Command(5)  # goTo.
+            args = [[x, y, z], yaw, duration, False]
+
+        elif iteration == 30*self.CTRL_FREQ:
+            height = 0.
+            duration = 3
+
+            command_type = Command(3)  # Land.
+            args = [height, duration]
+
+        elif iteration == 33*self.CTRL_FREQ-1:
+            command_type = Command(4)  # STOP command to be sent once the trajectory is completed.
+            args = []
+
+        else:
+            command_type = Command(0)  # None.
+            args = []
 
         #########################
         # REPLACE THIS (END) ####
@@ -377,7 +346,7 @@ class Controller():
         self.interstep_counter = 0
         self.interepisode_counter = 0
 
-    # NOTE: this function is not used in the course project. 
+    # NOTE: this function is not used in the course project.
     def interEpisodeReset(self):
         """Initialize/reset learning timing variables.
 

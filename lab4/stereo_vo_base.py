@@ -175,13 +175,13 @@ class VisualOdometry:
         
         return R, t
     
-    def get_inliers(self, p_a, p_b, iterations=1000, threshold=0.3):
+    def get_inliers(self, p_a, p_b, iterations=10, threshold=0.5):
         N = p_a.shape[0]
         max_inliers = 0
         inlier_idx = []
         for i in range(iterations):
-            # Randomly select 5 points from each point cloud
-            idx = np.random.choice(N, 5, replace=False)
+            # Randomly select 3 points from each point cloud
+            idx = np.random.choice(N, 3, replace=False)
             p_a_sample = p_a[idx]
             p_b_sample = p_b[idx]
 

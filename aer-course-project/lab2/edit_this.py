@@ -128,11 +128,29 @@ class GeoController():
                                  ):
         
         
+        # desired_acc = target_acc
+        # desired_yaw = target_rpy[2]
+        print("target acceleration", target_acc)
+        print("target velocity", target_vel, " actual velocity = ", cur_vel)
+        print("target position", target_pos, " actual position = ", cur_pos)
+
+        Kp = np.diag([0.1,0.1,10])
+        Kv = np.diag([3,3,1])
         desired_acc = target_acc
         desired_yaw = target_rpy[2]
 
         pos_e = target_pos - cur_pos
         vel_e = target_vel - cur_vel
+
+        # max position error - 2 m
+        # max_pos_e = 2
+        # pos_e = max_pos_e * np.tanh(pos_e / max_pos_e)
+
+        # max_vel_e = 2
+        # vel_e = max_vel_e * np.tanh(pos_e / max_vel_e)
+
+
+        #TODO - cap position and vel errors
         
         desired_thrust = 0
         desired_euler = np.zeros(3)
@@ -149,6 +167,17 @@ class GeoController():
 
         #---------Task 2: Compute the desired thrust command--------#
 
+        print("pitch=", desired_euler[0]*180/np.pi)
+        print("roll=", desired_euler[1]*180/np.pi)
+        print("yaw=", desired_euler[2]*180/np.pi)
+
+        # print("pos_e=",pos_e)
+        # print("vel_e=",vel_e)
+
+        # desired_euler = np.array([desired_pitch, desired_roll, desired_yaw]).reshape((3,))
+        # desired_euler[0] = desired_roll
+        # desired_euler[1] = desired_pitch
+        # desired_euler[2] = desired_yaw
         a_des_norm = np.linalg.norm(a_des)
         desired_thrust = self.mass * a_des_norm
 

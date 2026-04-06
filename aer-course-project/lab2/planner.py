@@ -166,7 +166,7 @@ class Controller():
                                               )
       return self.KF * rpms**2
 
-    def getRef_orig(self,
+    def getRef(self,
               time,
               obs,
               reward=None,
@@ -196,7 +196,7 @@ class Controller():
             raise RuntimeError("[ERROR] Attempting to use method 'getRef' but Controller was created with 'use_firmware' = True.")
 
         # Get the desired speed 
-        self.desired_speed = self.initial_obs[3] / 20
+        self.desired_speed = self.initial_obs[3]
         # Get the desired angular velocity
         self.omega = self.desired_speed / self.radius
         # Get the duration of completing one lap
@@ -212,13 +212,17 @@ class Controller():
         ref_vel = np.array([-self.radius * omega * math.sin(omega * time), self.radius * omega * math.cos(omega * time), 0.0])
         ref_acc = np.array([-self.radius * omega2 * math.cos(omega * time), -self.radius * omega2 * math.sin(omega * time), 0.0])
 
+        desired_yaw = np.arctan2(ref_vel[1], ref_vel[0]) - np.pi/2 #atan(py/px) + pi/2
+        print("initial yaw from vel", desired_yaw)
+
+
         target_p = ref_pos
         target_v = ref_vel
         target_a = ref_acc
 
         return target_p, target_v, target_a
 
-    def getRef(self,
+    def getRef_test(self,
               time,
               obs,
               reward=None,

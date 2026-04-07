@@ -9,15 +9,15 @@ from scipy.optimize import SR1
 
 def generate_waypoints(startPos, endPos):
     poses = []
-    poses.append((startPos[0], startPos[2], startPos[4]))
+    poses.append((startPos[0], startPos[1], startPos[2]))
     poses.append((-0.5, -3.0, 2.0))
     poses.append((-0.5, -2.0, 2.0))
     poses.append((-0.5, -1.0, 2.0))
     poses.append((-0.5,  0.0, 2.0))
     poses.append((-0.5,  1.0, 2.0))
     poses.append((-0.5,  2.0, 2.0))
-    poses.append([endPos[0], endPos[2], endPos[4]])
-    return poses
+    poses.append([endPos[0], endPos[1], endPos[2]])
+    return np.array(poses)
 
 class TimeSegmentOptimizer():
     def __init__(self, waypoints, initial_info):
@@ -39,25 +39,52 @@ class TimeSegmentOptimizer():
         # Polynomial fit.
         deg = 4
         t = np.arange(self.waypoints.shape[0])
- 
+
         num_waypoints = self.waypoints.shape[0]
-        
+
         p_prev = self.waypoints[0:num_waypoints-1,:]
         p_next = self.waypoints[1:,:]
 
-        waypoint_min_lengths = np.linalg.norm(p_next - p_prev)
+        print("p_next.shape", p_next.shape)
+        waypoint_min_lengths = np.linalg.norm(p_next - p_prev, axis=1)
+        print("waypoint_min_lengths.shape", waypoint_min_lengths.shape)
         total_length = np.sum(waypoint_min_lengths)
         t_initial = waypoint_min_lengths / total_length * max_duration
-        t_initial = np.concat([0, t_initial])
+        print("t_initial", t_initial)
+
+        print("t total", sum(t_initial))
+
+        print(f"number of waypoints {num_waypoints}")
+        print(f"number of time segments {len(t_initial)}")
 
         constraint_func = lambda x: self.constraints(x)
         objective_func = lambda x: self.objective_function(x)
-        nonl_constraints = NonlinearConstraint(constraint_func,0, np.inf, jac='2-point', hess=BFGS())
         # bounds = self.bounds(t_initial)
 
-        bounds = Bounds(0, max_duration)
+        lb = np.zeros_like(t_initial)
+        ub = np.ones_like(t_initial) * np.inf
+        bounds = Bounds(lb, ub)
 
-        res = minimize(objective_func, t_initial, method='trust-constr', jac='2-point', hess=SR1(), constraints=[None, nonl_constraints], bounds=bounds, options={'verbose': 1})
+        print("Running minimization")
+
+        vx_max = self.max_speed_xy * np.ones_like(t_initial)
+        vy_max = self.max_speed_xy * np.ones_like(t_initial)
+        vz_max = self.max_speed_z * np.ones_like(t_initial)
+
+        ax_max = self.max_acceleration_xy * np.ones_like(t_initial)
+        ay_max = self.max_acceleration_xy * np.ones_like(t_initial)
+        az_max = self.max_acceleration_z * np.ones_like(t_initial)
+
+        jx_max = self.max_jerk_xy * np.ones_like(t_initial)
+        jy_max = self.max_jerk_xy * np.ones_like(t_initial)
+        jz_max = self.max_jerk_z * np.ones_like(t_initial)
+
+        nl_ub = [vx_max, vy_max,vz_max,ax_max, ay_max,az_max,jx_max, jy_max,jz_max]
+        nl_lb = [-vx_max, -vy_max, -vz_max, -ax_max, -ay_max, -az_max, -jx_max, -jy_max, -jz_max]
+
+        nonl_constraints = NonlinearConstraint(constraint_func,0, np.inf, jac='2-point', hess=BFGS())
+
+        res = minimize(objective_func, t_initial, method='SLSQP', jac='2-point', hess=SR1(), constraints=nonl_constraints, bounds=bounds, options={'verbose': 1})
         return res
 
 
@@ -68,16 +95,17 @@ class TimeSegmentOptimizer():
         tmax = np.ones_like(times) * np.inf
 
         bounds = Bounds(t0, tmax)
-        return bounds    
+        return bounds
 
     def objective_function(self, times):
-        return np.sum(times)
+        return np.sum(times)**2
 
         # t_initial = np.linspace(t[0], t[-1], int(max_duration*ctrl_freq))
 
-    def constraints(self, times):
+    def constraints(self, durations):
         # should return g.t or equal to zero
         deg = 4
+        times = np.insert(durations,0,0)
         fx = np.poly1d(np.polyfit(times, self.waypoints[:,0], deg))
         fy = np.poly1d(np.polyfit(times, self.waypoints[:,1], deg))
         fz = np.poly1d(np.polyfit(times, self.waypoints[:,2], deg))
@@ -129,7 +157,7 @@ class TimeSegmentOptimizer():
         jy_constraints = self.max_jerk_xy - np.abs(ref_jy)
         jz_constraints = self.max_jerk_z - np.abs(ref_jz)
 
-        return np.concatenate([vx_constraints, 
+        return np.concatenate([vx_constraints,
                                vy_constraints,
                                vz_constraints,
                                ax_constraints,
@@ -138,6 +166,16 @@ class TimeSegmentOptimizer():
                                jx_constraints,
                                jy_constraints,
                                jz_constraints])
+
+        # return np.max(np.abs(np.concatenate([ref_vx,
+        #                        ref_vy,
+        #                        ref_vz,
+        #                        ref_ax,
+        #                        ref_ay,
+        #                        ref_az,
+        #                        ref_jx,
+        #                        ref_jy,
+        #                        ref_jz])),axis=0)
 
 def test():
 
@@ -150,9 +188,9 @@ def test():
     dt = 1/freq
     data = {}
     data["ctrl_freq"] = freq
-    data["max_speed_xy"] = 1
+    data["max_speed_xy"] = 2
     data["max_acceleration_xy"] = 11.2
-    data["max_speed_z"] = 1
+    data["max_speed_z"] = 2
     data["max_acceleration_z"] = 0.517
     data["max_jerk_xy"] = 2*data["max_acceleration_xy"] / dt
     data["max_jerk_z"] = 2*data["max_acceleration_z"]/ dt
@@ -160,10 +198,14 @@ def test():
     waypoints = generate_waypoints(initial_pos, end_pos)
 
     optimizer = TimeSegmentOptimizer(waypoints, data)
-    max_time = 60
+    max_time = 180
     res = optimizer.optimize_time_segments(max_time)
 
     print(res)
+
+    print("------------------------------------")
+    print(res.x)
+    print(np.sum(res.x))
 
     return
 

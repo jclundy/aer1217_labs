@@ -136,7 +136,7 @@ class VisualOdometry:
         p_b = np.vstack((x, y, z)).T
         
         #inliers
-        inlier_idx = self.get_inliers(p_a, p_b, iterations=100, threshold=0.5)
+        inlier_idx = self.get_inliers(p_a, p_b)
         inlier_pre = p_a[inlier_idx]
         inlier_curr = p_b[inlier_idx]
 

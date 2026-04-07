@@ -12,10 +12,13 @@ max_lateral_acceleration = max_lateral_thrust / mass
 
 max_tilt_angle = np.arctan2(weight, max_lateral_acceleration) * 180/np.pi
 
+max_accel_z = payload_weight / weight
+
 print("Weight={:.3f} N, Combined Thrust={:.3f} N".format(weight, max_combined_thrust))
 print("Max lateral thrust={:.3f} N".format(max_lateral_thrust))
 print("Max acceleration thrust={:.3f} m/s^2".format(max_lateral_acceleration))
 print("max tilt angle={:.2f}".format(max_tilt_angle))
+print("Max acceleration z={:.3f} m/s^2".format(max_accel_z))
 
 # Brushless max speed: 2.5 m/s
 # DC coreless max speed: 1 m/s

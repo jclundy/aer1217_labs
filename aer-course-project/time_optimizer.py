@@ -98,7 +98,7 @@ class TimeSegmentOptimizer():
         return bounds
 
     def objective_function(self, times):
-        return np.sum(times)**2
+        return np.sum(times)
 
         # t_initial = np.linspace(t[0], t[-1], int(max_duration*ctrl_freq))
 
@@ -198,7 +198,7 @@ def test():
     waypoints = generate_waypoints(initial_pos, end_pos)
 
     optimizer = TimeSegmentOptimizer(waypoints, data)
-    max_time = 180
+    max_time = 60
     res = optimizer.optimize_time_segments(max_time)
 
     print(res)

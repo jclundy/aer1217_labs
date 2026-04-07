@@ -71,7 +71,7 @@ class WaypointOptimizer():
         y_eq = self.waypoints[1:, 1] - p_next_y
         z_eq = self.waypoints[1:, 2] - p_next_z
 
-        return None
+        return np.concatenate(x_eq, y_eq, z_eq)
     
     def inequality_constraints(self, times, A,B,C):
         return None

@@ -18,7 +18,7 @@ class WaypointOptimizer():
         self.max_speed_z = initial_info["max_speed_z"]
         self.max_acceleration_xy = initial_info["max_acceleration_xy"]
         self.max_acceleration_z = initial_info["max_acceleration_z"]
-        self.dt = 1/self.ctrl_freq
+        self.dt = 1.0/float(self.ctrl_freq)
         self.max_jerk_xy = 2*self.max_acceleration_xy/self.dt
         self.max_jerk_z = 2*self.max_acceleration_z/self.dt
         self.max_tilt = initial_info["max_tilt"]
@@ -84,7 +84,7 @@ class WaypointOptimizer():
         waypoint_min_lengths = np.linalg.norm(p_next - p_prev, axis=1)
 
         # times must also meet speed constraints
-        t_min = waypoint_min_lengths / (self.max_speed_xy)
+        t_min = np.ones((N,)) * self.dt
         # times must be gt eq zero
         t_max = np.ones_like(t_min) * np.inf
 
@@ -314,28 +314,111 @@ class WaypointOptimizer():
     # def linear_constraints(self, times, A,B,C):
     #     pass
     #     # linear_constraint = LinearConstraint([[1, 2], [2, 1]], [-np.inf, 1], [1, 1])
+    def compute_states(self, X,dt):
+        n = self.N
+        durations = X[0:n]
+        A3 = X[n:2*n]
+        B3 = X[2*n:3*n]
+        C3 = X[3*n:4*n]
+
+        Ai, Bi, Ci = self.unwind_coefficients(durations, A3, B3, C3)
+        A0 = Ai[:,0]
+        A1 = Ai[:,0]
+        A2 = Ai[:,0]
+
+        B0 = Bi[:,0]
+        B1 = Bi[:,0]
+        B2 = Bi[:,0]
+
+        C0 = Ci[:,0]
+        C1 = Ci[:,0]
+        C2 = Ci[:,0]
+
+        total_duration = np.sum(durations)
+        print("total duration", total_duration)
+        print("dt", dt)
+        times = np.arange(durations.shape[0]) * total_duration * dt
+
+        print(times)
+        # poly_indexes = 
+        x = np.zeros((durations.shape[0],))
+        y = np.zeros((durations.shape[0],))
+        z = np.zeros((durations.shape[0],))
+
+        xd = np.zeros((durations.shape[0],))
+        yd = np.zeros((durations.shape[0],))
+        zd = np.zeros((durations.shape[0],))
+
+        xdd = np.zeros((durations.shape[0],))
+        ydd = np.zeros((durations.shape[0],))
+        zdd = np.zeros((durations.shape[0],))
+
+        segment_start_times = np.zeros((len(durations),1))
+        segment_end_times = np.zeros((len(durations),1))
+        # poly_indexes = []
+        for j in range(1,len(durations)):
+            segment_end_times[j-1] += durations[j-1]
+            segment_start_times[j] = segment_end_times[j-1]
+
+        for i in range(0, len(times)):
+            # find which polynomial to use
+            elapsed_time = i * dt
+            poly_idx = 0
+            for j in range(0,len(durations)):
+                if( elapsed_time < segment_end_times[j]):
+                    break
+                poly_idx +=1
+            
+            ti = elapsed_time - segment_start_times[poly_idx]
+
+            xdd[i] = 2 * A2[poly_idx] + 6 * A3[poly_idx] * ti
+            ydd[i] = 2 * B2[poly_idx] + 6 * B3[poly_idx] * ti
+            zdd[i] = 2 * C2[poly_idx] + 6 * C3[poly_idx] * ti
+
+            xd[i] = A1[poly_idx] + 2 * A2[poly_idx] * ti + 3 * A3[poly_idx] * ti**2
+            yd[i] = B1[poly_idx] + 2 * B2[poly_idx] * ti + 3 * B3[poly_idx] * ti**2
+            zd[i] = C1[poly_idx] + 2 * C2[poly_idx] * ti + 3 * C3[poly_idx] * ti**2
+
+            x[i] = A0[poly_idx] + A1[poly_idx] * ti + A2[poly_idx] * ti**2 + A3[poly_idx] * ti**3
+            y[i] = B0[poly_idx] + B1[poly_idx] * ti + B2[poly_idx] * ti**2 + B3[poly_idx] * ti**3
+            z[i] = C0[poly_idx] + C1[poly_idx] * ti + C2[poly_idx] * ti**2 + C3[poly_idx] * ti**3
+
+        return np.concatenate([times, x,y,z,xd,yd,zd,xdd,ydd,zdd]).reshape(-1,10).T
 
 
 
 def generate_waypoints(startPos, endPos):
-    poses = []
-    poses.append((startPos[0], startPos[1], startPos[2]))
-    poses.append((-0.25, -1.0, 0.25))
-    poses.append((-0.5, -2.0, 0.5))
-    poses.append((-0.5, -3.0, 0.5))
-    poses.append((-0.5, -4.0, 0.5))
-    poses.append((-0.5, -5.0, 0.5))
-    poses.append((-0.5, -3.0, 2.0))
-    poses.append((-0.5, -2.0, 2.0))
-    poses.append((-0.5, -1.0, 2.0))
-    poses.append((-0.5,  0.0, 2.0))
-    poses.append((-0.5,  1.0, 2.0))
-    poses.append((-0.5,  2.0, 2.0))
-    poses.append((-0.5,  1.0, 1.5))
-    poses.append((-0.5,  0.5, 1.0))
-    poses.append((-0.25,  0.25, 0.5))
-    poses.append([endPos[0], endPos[1], endPos[2]])
-    return np.array(poses)
+    # poses = []
+    # poses.append((startPos[0], startPos[1], startPos[2]))
+    # poses.append((-0.25, -1.0, 0.25))
+    # poses.append((-0.5, -2.0, 0.5))
+    # poses.append((-0.5, -3.0, 0.5))
+    # poses.append((-0.5, -4.0, 0.5))
+    # poses.append((-0.5, -5.0, 0.5))
+    # poses.append((-0.5, -3.0, 2.0))
+    # poses.append((-0.5, -2.0, 2.0))
+    # poses.append((-0.5, -1.0, 2.0))
+    # poses.append((-0.5,  0.0, 2.0))
+    # poses.append((-0.5,  1.0, 2.0))
+    # poses.append((-0.5,  2.0, 2.0))
+    # poses.append((-0.5,  1.0, 1.5))
+    # poses.append((-0.5,  0.5, 1.0))
+    # poses.append((-0.25,  0.25, 0.5))
+    # poses.append([endPos[0], endPos[1], endPos[2]])
+
+    poses = [[-1.0, -3.0, 1.0], 
+            [-0.09999980975910072, -2.49952220397356, 1.0], 
+            [0.5, -2.5, 1.0], 
+            [2.0, -2.1, 1.0], 
+            [2.0, -1.5, 1.0], 
+            [1.2999999048795503, -0.64976110198678, 1.0], 
+            [0.5999998097591007, 0.20047779602643997, 1.0], 
+            [0.0, 0.2, 1.0], 
+            [-0.5, 0.9, 1.0], 
+            [-0.5, 1.5, 1.0], 
+            [-0.5, 2.0, 1.0]]
+    return np.array(poses).reshape(-1,3)
+
 
 def test():
 
@@ -358,7 +441,7 @@ def test():
     waypoints = generate_waypoints(initial_pos, end_pos)
 
     optimizer = WaypointOptimizer(waypoints, data)
-    max_time = 360
+    max_time = 120
     res = optimizer.optimize_segments(max_time)
 
     print(res)
@@ -368,7 +451,41 @@ def test():
     print(res.x[0:optimizer.N])
     print(np.sum(res.x[0:optimizer.N]))
 
+    states = optimizer.compute_states(res.x,dt)
+    print(states)
+
+    state_times = states[:,0]
+    print("state_times", state_times)
+
     return
+
+def generate_trajectory():
+
+    # Load configuration.
+
+    initial_pos = [0,0,0]
+    end_pos = [0,0,0]
+
+    freq = 60
+    dt = 1/freq
+    data = {}
+    data["ctrl_freq"] = freq
+    data["max_speed_xy"] = 2
+    data["max_acceleration_xy"] = 11.2
+    data["max_speed_z"] = 2
+    data["max_acceleration_z"] = 0.517
+    data["max_jerk_xy"] = 2*data["max_acceleration_xy"] / dt
+    data["max_jerk_z"] = 2*data["max_acceleration_z"]/ dt
+    data["max_tilt"] = 1.46 * np.pi / 180.0 # radians
+    waypoints = generate_waypoints(initial_pos, end_pos)
+
+    optimizer = WaypointOptimizer(waypoints, data)
+    max_time = 120
+    res = optimizer.optimize_segments(max_time)
+    states = optimizer.compute_states(res.x,dt)
+
+    return states # t, x, y,  z, xd, yd, zd, xdd, ydd, zdd
+
 
 if __name__ == "__main__":
     test()

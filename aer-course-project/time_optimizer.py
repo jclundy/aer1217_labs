@@ -8,16 +8,18 @@ from scipy.optimize import SR1
 
 
 def generate_waypoints(startPos, endPos):
-    poses = []
-    poses.append((startPos[0], startPos[1], startPos[2]))
-    poses.append((-0.5, -3.0, 2.0))
-    poses.append((-0.5, -2.0, 2.0))
-    poses.append((-0.5, -1.0, 2.0))
-    poses.append((-0.5,  0.0, 2.0))
-    poses.append((-0.5,  1.0, 2.0))
-    poses.append((-0.5,  2.0, 2.0))
-    poses.append([endPos[0], endPos[1], endPos[2]])
-    return np.array(poses)
+    poses = [[-1.0, -3.0, 1.0], 
+            [-0.09999980975910072, -2.49952220397356, 1.0], 
+            [0.5, -2.5, 1.0], 
+            [2.0, -2.1, 1.0], 
+            [2.0, -1.5, 1.0], 
+            [1.2999999048795503, -0.64976110198678, 1.0], 
+            [0.5999998097591007, 0.20047779602643997, 1.0], 
+            [0.0, 0.2, 1.0], 
+            [-0.5, 0.9, 1.0], 
+            [-0.5, 1.5, 1.0], 
+            [-0.5, 2.0, 1.0]]
+    return np.array(poses).reshape(-1,3)
 
 class TimeSegmentOptimizer():
     def __init__(self, waypoints, initial_info):
@@ -98,7 +100,7 @@ class TimeSegmentOptimizer():
         return bounds
 
     def objective_function(self, times):
-        return np.sum(times)
+        return np.sum(times**2)
 
         # t_initial = np.linspace(t[0], t[-1], int(max_duration*ctrl_freq))
 
@@ -198,7 +200,7 @@ def test():
     waypoints = generate_waypoints(initial_pos, end_pos)
 
     optimizer = TimeSegmentOptimizer(waypoints, data)
-    max_time = 60
+    max_time = 360
     res = optimizer.optimize_time_segments(max_time)
 
     print(res)

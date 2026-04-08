@@ -40,6 +40,7 @@ except ImportError:
 # REPLACE THIS (START) ##
 #########################
 from trajectory_generators import circle_trajectory_generator, hardcoded_trajectory_generator
+from optimize_trajectory import generate_trajectory
 
 # Optionally, create and import modules you wrote.
 # Please refrain from importing large or unstable 3rd party packages.
@@ -141,7 +142,10 @@ class Controller():
         duration = 6
         radius = 1
         # ref_state = circle_trajectory_generator(self.initial_obs, radius, duration, self.CTRL_FREQ)
-        ref_state = hardcoded_trajectory_generator(self.initial_obs, initial_info, self.CTRL_FREQ, duration)
+        # ref_state = hardcoded_trajectory_generator(self.initial_obs, initial_info, self.CTRL_FREQ, duration)
+        ref_time_state = generate_trajectory()
+
+        ref_state = ref_time_state[:,1:]
 
         ref_pos = ref_state[:, 0:3]
         ref_x = ref_pos[:,0]

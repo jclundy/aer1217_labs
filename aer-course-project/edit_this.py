@@ -140,7 +140,7 @@ class Controller():
             to_gate = np.array([g[0] - current[0], g[1] - current[1]])
             if np.dot(normal, to_gate) > 0:
                 normal = -normal
-            approach = [g[0] + 0.4 * normal[0], g[1] + 0.4 * normal[1]]
+            approach = [g[0] + 0.6 * normal[0], g[1] + 0.6 * normal[1]]
 
             # Insert midpoint on long segments to prevent polynomial overshoot
             dist = np.hypot(approach[0] - current[0], approach[1] - current[1])

@@ -337,21 +337,25 @@ class WaypointOptimizer():
         total_duration = np.sum(durations)
         print("total duration", total_duration)
         print("dt", dt)
-        times = np.arange(durations.shape[0]) * total_duration * dt
+        # times = np.arange(durations.shape[0]) * total_duration * dt
+
+        freq = 1/dt
+
+        times = np.linspace(0, total_duration, int(total_duration*freq))
 
         print(times)
         # poly_indexes = 
-        x = np.zeros((durations.shape[0],))
-        y = np.zeros((durations.shape[0],))
-        z = np.zeros((durations.shape[0],))
+        x = np.zeros((times.shape[0],))
+        y = np.zeros((times.shape[0],))
+        z = np.zeros((times.shape[0],))
 
-        xd = np.zeros((durations.shape[0],))
-        yd = np.zeros((durations.shape[0],))
-        zd = np.zeros((durations.shape[0],))
+        xd = np.zeros((times.shape[0],))
+        yd = np.zeros((times.shape[0],))
+        zd = np.zeros((times.shape[0],))
 
-        xdd = np.zeros((durations.shape[0],))
-        ydd = np.zeros((durations.shape[0],))
-        zdd = np.zeros((durations.shape[0],))
+        xdd = np.zeros((times.shape[0],))
+        ydd = np.zeros((times.shape[0],))
+        zdd = np.zeros((times.shape[0],))
 
         segment_start_times = np.zeros((len(durations),1))
         segment_end_times = np.zeros((len(durations),1))
@@ -365,10 +369,13 @@ class WaypointOptimizer():
             elapsed_time = i * dt
             poly_idx = 0
             for j in range(0,len(durations)):
-                if( elapsed_time < segment_end_times[j]):
+                if( elapsed_time <= segment_end_times[j]):
                     break
                 poly_idx +=1
             
+            if poly_idx >= len(durations):
+                poly_idx = len(durations)-1
+
             ti = elapsed_time - segment_start_times[poly_idx]
 
             xdd[i] = 2 * A2[poly_idx] + 6 * A3[poly_idx] * ti
@@ -459,7 +466,7 @@ def test():
 
     return
 
-def generate_trajectory():
+def optimize_trajectory(waypoints=None):
 
     # Load configuration.
 
@@ -477,7 +484,12 @@ def generate_trajectory():
     data["max_jerk_xy"] = 2*data["max_acceleration_xy"] / dt
     data["max_jerk_z"] = 2*data["max_acceleration_z"]/ dt
     data["max_tilt"] = 1.46 * np.pi / 180.0 # radians
-    waypoints = generate_waypoints(initial_pos, end_pos)
+    if(waypoints is None):
+        # waypoints = generate_waypoints(initial_pos, end_pos)
+        print("loading waypoint from file")
+        # np.savez("waypoints.npz", wps = self.waypoints)        
+        npzfile = np.load("waypoints.npz")
+        waypoints = npzfile["wps"]
 
     optimizer = WaypointOptimizer(waypoints, data)
     max_time = 120

@@ -10,6 +10,7 @@ except ImportError:
 # REPLACE THIS (START) ##
 #########################
 from trajectory_generators import hardcoded_trajectory_generator
+from optimize_trajectory import optimize_trajectory
 try:
     import example_custom_utils as ecu
 except ImportError:
@@ -72,32 +73,40 @@ class Controller():
 
         # For each target, use direct path or RRT* if blocked
         current = [self.initial_obs[0], self.initial_obs[2]]
-        for (goal, goal_z) in targets:
-            if not planner._edge_free(ecu.Node(*current), ecu.Node(*goal)):
-                print(f"RRT* triggered: {current} -> {goal}")
-                path = planner.plan(current, goal)
-                path[-1] = goal
-                n = len(path)
-                for i, pt in enumerate(path[1:], 1):
-                    z = waypoints[-1][2] + (goal_z - waypoints[-1][2]) * i / (n - 1)
-                    waypoints.append([pt[0], pt[1], z])
-            else:
-                if np.hypot(goal[0]-current[0], goal[1]-current[1]) > 2.0:
-                    waypoints.append([(current[0]+goal[0])/2, (current[1]+goal[1])/2, goal_z])
-                waypoints.append([goal[0], goal[1], goal_z])
-            current = goal
+        # for (goal, goal_z) in targets:
+        #     if not planner._edge_free(ecu.Node(*current), ecu.Node(*goal)):
+        #         print(f"RRT* triggered: {current} -> {goal}")
+        #         path = planner.plan(current, goal)
+        #         path[-1] = goal
+        #         n = len(path)
+        #         for i, pt in enumerate(path[1:], 1):
+        #             z = waypoints[-1][2] + (goal_z - waypoints[-1][2]) * i / (n - 1)
+        #             waypoints.append([pt[0], pt[1], z])
+        #     else:
+        #         if np.hypot(goal[0]-current[0], goal[1]-current[1]) > 2.0:
+        #             waypoints.append([(current[0]+goal[0])/2, (current[1]+goal[1])/2, goal_z])
+        #         waypoints.append([goal[0], goal[1], goal_z])
+        #     current = goal
+        # self.waypoints = np.array(waypoints)
+        # np.savez("waypoints.npz", wps = self.waypoints)
 
-        self.waypoints = np.array(waypoints)
+        # ref_state = hardcoded_trajectory_generator(
+        #     self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
+        #     waypoints=self.waypoints
+        # )
 
-        ref_state = hardcoded_trajectory_generator(
-            self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
-            waypoints=self.waypoints
-        )
+        npzfile = np.load("waypoints.npz")
+        self.waypoints = npzfile["wps"]
+
+        ref_time_state = optimize_trajectory(self.waypoints)
+        ref_time = ref_time_state[:,0]
+        ref_state = ref_time_state[:,1:]
         self.ref_x, self.ref_y, self.ref_z = ref_state[:,0], ref_state[:,1], ref_state[:,2]
         self.ref_vel, self.ref_acc         = ref_state[:,3:6], ref_state[:,6:9]
         self.ref_euler, self.ref_euler_rates = ref_state[:,9:12], ref_state[:,12:15]
 
-        return np.linspace(0, self.total_duration, len(ref_state))
+        # return np.linspace(0, self.total_duration, len(ref_state))
+        return ref_time
         #########################
         # REPLACE THIS (END) ####
         #########################

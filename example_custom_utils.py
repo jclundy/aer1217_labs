@@ -74,20 +74,24 @@ class RRTStar:
     def collision(self, pt, g_id):
 
         ##check if path between points will hit an obstacle
-        for obs in self.obstacles:
-            if obs[5] == g_id:
-                ##ignore this obstacle
-                continue
-         
+        for obs in self.obstacles:         
             px, py, pz = obs[:3]
-            obs_r = obs[3]
-            if obs_r == 0:
-                obs_r = 0.5 ##assume big
+            obs_r = 0.35 ##pillars + uncertainty to be changed
 
             ##check if line between p1 and p2 intersects with sphere around obs
             x, y, z = pt[:3]
             if (x-px)**2 + (y-py)**2 + (z-pz)**2 < obs_r**2:
-                return True
+                A = True
+        for i in range(0, 4):
+            if i == g_id:
+                continue ##skip if this is the gate we are trying to go through
+            gate = self.NOMINAL_GATES[i]
+            gx, gy, gz = gate[:3]
+            gate_r = 0.3 ##0.4 length +0.2 uncertainty for dimeter
+            if (x-gx)**2 + (y-gy)**2 + (z-gz)**2 < gate_r**2:
+                B = True
+        if A and B:
+            return True
         return False
 
     def segment_collision(self, a, b, g_id):        

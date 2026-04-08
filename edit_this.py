@@ -139,7 +139,7 @@ class Controller():
         
         pts = [start_pos]
         for gid in GATE_ORDER:
-            pts.append(np.array(self.NOMINAL_GATES[gid-1][:3], gid+1))
+            pts.append(np.array([self.NOMINAL_GATES[gid-1][:3], gid]))
         pts.append(goal_pose)
 
         buffer_pts = [pts[0]]

@@ -39,21 +39,19 @@ except ImportError:
 #########################
 # REPLACE THIS (START) ##
 #########################
-from trajectory_generators import circle_trajectory_generator, hardcoded_trajectory_generator
 
-# Optionally, create and import modules you wrote.
-# Please refrain from importing large or unstable 3rd party packages.
+from trajectory_generators import hardcoded_trajectory_generator
+
 try:
     import example_custom_utils as ecu
+    from example_custom_utils import plan_gate_sequence
 except ImportError:
-    # PyTest import.
     from . import example_custom_utils as ecu
+    from .example_custom_utils import plan_gate_sequence
 
 #########################
 # REPLACE THIS (END) ####
 #########################
-
-
 
 class Controller():
     """Template controller class.
@@ -121,63 +119,62 @@ class Controller():
         # Draw the trajectory on PyBullet's GUI.
         draw_trajectory(initial_info, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
 
-
     def planning(self, use_firmware, initial_info):
-        """Trajectory planning algorithm"""
-        #########################
-        # REPLACE THIS (START) ##
-        #########################
-        ## generate waypoints for planning
+        """Trajectory planning using gate-centered waypoints with approach vectors."""
 
-        # Call a function in module `example_custom_utils`.
-        ecu.exampleFunction()
+        gate_sequence = [0, 1, 2, 3]  # <-- UPDATE THIS ON DEMO DAY
 
-        # initial waypoint
-        if use_firmware:
-            waypoints = [(self.initial_obs[0], self.initial_obs[2], initial_info["gate_dimensions"]["tall"]["height"])]  # Height is hardcoded scenario knowledge.
-        else:
-            waypoints = [(self.initial_obs[0], self.initial_obs[2], self.initial_obs[4])]
+        gates = initial_info["nominal_gates_pos_and_type"]
+        tall_h = initial_info["gate_dimensions"]["tall"]["height"]
+        low_h  = initial_info["gate_dimensions"]["low"]["height"]
+        start_z = tall_h if use_firmware else self.initial_obs[4]
 
-        duration = 6
-        radius = 1
-        # ref_state = circle_trajectory_generator(self.initial_obs, radius, duration, self.CTRL_FREQ)
-        ref_state = hardcoded_trajectory_generator(self.initial_obs, initial_info, self.CTRL_FREQ, duration)
+        waypoints = [[self.initial_obs[0], self.initial_obs[2], start_z]]
+        current = [self.initial_obs[0], self.initial_obs[2]]
 
-        ref_pos = ref_state[:, 0:3]
-        ref_x = ref_pos[:,0]
-        ref_y = ref_pos[:,1]
-        ref_z = ref_pos[:,2]
+        for idx in gate_sequence:
+            g = gates[idx]
+            goal_z = tall_h if g[6] == 0 else low_h
+            gate_yaw = g[5]
+            normal = np.array([np.sin(gate_yaw), np.cos(gate_yaw)])
+            to_gate = np.array([g[0] - current[0], g[1] - current[1]])
+            if np.dot(normal, to_gate) > 0:
+                normal = -normal
+            approach = [g[0] + 0.4 * normal[0], g[1] + 0.4 * normal[1]]
 
-        ref_vel = ref_state[:, 3:6]
-        ref_acc = ref_state[:, 6:9]
-        ref_euler = ref_state[:,9:12]
-        ref_body_rates = ref_state[:,12:15]
+            # Insert midpoint on long segments to prevent polynomial overshoot
+            dist = np.hypot(approach[0] - current[0], approach[1] - current[1])
+            if dist > 2.0:
+                mid = [(current[0] + approach[0]) / 2,
+                    (current[1] + approach[1]) / 2,
+                    goal_z]
+                waypoints.append(mid)
 
+            waypoints.append([approach[0], approach[1], goal_z])
+            waypoints.append([g[0], g[1], goal_z])
+            current = [g[0], g[1]]
 
-        ref_length = len(ref_x)
-        num_wpts = 8
-        for i in range(0, num_wpts):
-            wpt_idx = int(ref_length * (i+1) / num_wpts)-1
-            waypoints.append((ref_x[wpt_idx], ref_y[wpt_idx], ref_z[wpt_idx]))
-
+        # Final target
+        target = initial_info["x_reference"]
+        waypoints.append([target[0], target[2], target[4]])
         self.waypoints = np.array(waypoints)
-        t = np.arange(self.waypoints.shape[0])
-        t_scaled = np.linspace(t[0], t[-1], int(duration*self.CTRL_FREQ))
-        self.ref_x = np.array(ref_x).flatten()
-        self.ref_y = np.array(ref_y).flatten()
-        self.ref_z = np.array(ref_z).flatten()
 
-        self.ref_vel = ref_vel
-        self.ref_acc = ref_acc
-        self.ref_euler = ref_euler
-        self.ref_euler_rates = ref_body_rates
+        # Single polynomial fit through all waypoints
+        total_duration = 20  # seconds; tune for speed
+        ref_state = hardcoded_trajectory_generator(
+            self.initial_obs, initial_info, self.CTRL_FREQ, total_duration,
+            waypoints=self.waypoints
+        )
 
-        print(self.ref_x.shape)
+        self.ref_x           = ref_state[:, 0]
+        self.ref_y           = ref_state[:, 1]
+        self.ref_z           = ref_state[:, 2]
+        self.ref_vel         = ref_state[:, 3:6]
+        self.ref_acc         = ref_state[:, 6:9]
+        self.ref_euler       = ref_state[:, 9:12]
+        self.ref_euler_rates = ref_state[:, 12:15]
 
-        #########################
-        # REPLACE THIS (END) ####
-        #########################
-
+        t_scaled = np.linspace(0, total_duration, len(ref_state))
         return t_scaled
 
     def cmdFirmware(self,

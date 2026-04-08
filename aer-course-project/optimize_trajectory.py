@@ -1,8 +1,10 @@
 import numpy as np
 from scipy.optimize import minimize, Bounds, LinearConstraint, NonlinearConstraint
+from scipy.optimize import BFGS
+from scipy.optimize import SR1
 """
 Optimize times
-Inputs: 
+Inputs:
 - waypoints: list of waypoints (Nx3) vector
 - initial_info: dictionary of simulation parameters
 Outputs:
@@ -22,28 +24,174 @@ class WaypointOptimizer():
         self.max_tilt = initial_info["max_tilt"]
         self.waypoints = waypoints
 
-    def optimize_segment_times():
-        pass
+    def optimize_segments(self, max_duration):
+        t = np.arange(self.waypoints.shape[0])
+        num_waypoints = self.waypoints.shape[0]
 
-        # todo: add limits for torques - constraints body rates
+        N = num_waypoints-1
 
-    """
-    Decision variables:
-    - times per segment
-    - polynomial coefficients at each segment 3xN array [Ai....An; Bi...Bn; Ci....Cn]
-    - A coefficeints: N x 4
-    - B coefficients: N x 4
-    - C coefficients: N x 4
-    """
+        objective_func = lambda x: self.objective_function(x, N)
+        bounds = self.bounds()
+
+        eq_constraint_func = lambda x: self.eq_constraints(x,N)
+        nl_constraint_func = lambda x: self.ineq_constraints(x, N)
+
+        eq_conds = {'type': 'eq', 'fun': nl_constraint_func, 'jac':'2-point'}
+        ineq_conds = {'type': 'ineq', 'fun': eq_constraint_func, 'jac':'2-point'}
+
+
+        p_prev = self.waypoints[0:num_waypoints-1,:]
+        p_next = self.waypoints[1:,:]
+        waypoint_min_lengths = np.linalg.norm(p_next - p_prev, axis=1)
+        total_length = np.sum(waypoint_min_lengths)
+        t_initial = waypoint_min_lengths / total_length * max_duration
+
+        A3_initial = np.zeros_like(t_initial)
+        B3_initial = np.zeros_like(t_initial)
+        C3_initial = np.zeros_like(t_initial)
+        x0 = np.concatenate([t_initial, A3_initial, B3_initial, C3_initial])
+
+        res = minimize(objective_func, x0, method='SLSQP',  jac='2-point', hess=SR1(),
+               constraints=[eq_conds, ineq_conds], options={'ftol': 1e-9, 'disp': True},
+               bounds=bounds)
+
+        return res
+
+    def bounds(self):
+        # Bounds(lb, ub)
+        # bounds = Bounds([0, -0.5], [1.0, 2.0])
+
+        # compute waypoint distances
+        num_waypoints = self.waypoints.shape[0]
+        N = num_waypoints - 1
+        p_prev = self.waypoints[0:num_waypoints-1,:]
+        p_next = self.waypoints[1:,:]
+        waypoint_min_lengths = np.linalg.norm(p_next - p_prev, axis=1)
+
+        # times must be gt eq zero
+        t_max = np.ones_like(t_min) * np.inf
+        # times must also meet speed constraints
+        t_min = waypoint_min_lengths / (self.max_speed_xy)
+
+
+        # times must be gt eq zero
+        A3_min = np.ones_like(t_min) * -self.max_jerk_xy
+        B3_min = np.ones_like(t_min) * -self.max_jerk_xy
+        C3_min = np.ones_like(t_min) * -self.max_jerk_z
+
+        A3_max = np.ones_like(t_min) * self.max_jerk_xy
+        B3_max = np.ones_like(t_min) * self.max_jerk_xy
+        C3_max = np.ones_like(t_min) * self.max_jerk_z
+
+        lb = np.concatenate([t_min, A3_min, B3_min, C3_min])
+        ub = np.concatenate([t_max, A3_max, B3_max, C3_max])
+
+        bounds = Bounds(t_min, t_max)
+        return bounds
+
+    def ineq_constraints(self, X, n):
+        times = X[0:n]
+        A3 = X[n:2*n]
+        B3 = X[2*n:3*n]
+        C3 = X[3*n:4*n]
+
+        Ai = self.unwind_coefficients(A3)
+        A0 = Ai[:,0]
+        A1 = Ai[:,0]
+        A2 = Ai[:,0]
+
+        Bi = self.unwind_coefficients(B3)
+        B0 = Bi[:,0]
+        B1 = Bi[:,0]
+        B2 = Bi[:,0]
+
+        Ci = self.unwind_coefficients(B3)
+        C0 = Ci[:,0]
+        C1 = Ci[:,0]
+        C2 = Ci[:,0]
+        # constraint 1: acceleration constraint
+        xdd = 2 * A2 + 6 * A3 * times
+        ydd = 2 * B2 + 6 * B3 * times
+        zdd = 2 * C2 + 6 * C3 * times
+        xydd = np.sqrt(xdd^2 + ydd^2)
+
+        xy_acceleration_constraint = self.max_acceleration_xy - xydd
+        z_acceleration_constraint = self.max_acceleration_z - zdd
+
+        # constraint 2: velocity constraint
+        xd = A1 + 2 * A2 * times + 3 * A3 * times^2
+        yd = B1 + 2 * B2 * times + 3 * B3 * times^2
+        zd = C1 + 2 * C2 * times + 3 * C3 * times^2
+        xyd = np.sqrt(xd^2 + yd^2)
+
+        xy_velocity_constraint = self.max_speed_xy - np.abs(xyd)
+        z_velocity_constraint = self.max_speed_z - np.abs(zd)
+
+        return np.concatenate([xy_acceleration_constraint, z_acceleration_constraint, xy_velocity_constraint, z_velocity_constraint])
+
+    def eq_constraints(self,X,n):
+        times = X[0:n]
+        A3 = X[n:2*n]
+        B3 = X[2*n:3*n]
+        C3 = X[3*n:4*n]
+
+        Ai = self.unwind_coefficients(A3)
+        A0 = Ai[:,0]
+        A1 = Ai[:,0]
+        A2 = Ai[:,0]
+
+        Bi = self.unwind_coefficients(B3)
+        B0 = Bi[:,0]
+        B1 = Bi[:,0]
+        B2 = Bi[:,0]
+
+        Ci = self.unwind_coefficients(B3)
+        C0 = Ci[:,0]
+        C1 = Ci[:,0]
+        C2 = Ci[:,0]
+
+        constraints = []
+
+        # Position constraints
+        x = A0 + A1 * times + A2 * times^2 + A3 * times^3
+        y = B0 + B1 * times + B2 * times^2 + B3 * times^3
+        z = C0 + C1 * times + C2 * times^2 + C3 * times^3
+
+        # first position
+        eq0x = A0[0] - self.waypoints[0,0]
+        eq0y = B0[0] - self.waypoints[0,1]
+        eq0z = C0[0] - self.waypoints[0,2]
+
+        # rest of positions
+        eqnx = x - self.waypoints[1:,0]
+        eqny = y - self.waypoints[1:,1]
+        eqnz = z - self.waypoints[1:,2]
+
+        # last velocity is zero
+        xd = A1 + 2 * A2 * times + 3 * A3 * times^2
+        yd = B1 + 2 * B2 * times + 3 * B3 * times^2
+        zd = C1 + 2 * C2 * times + 3 * C3 * times^2
+
+        eqn_xd = xd[n-1]
+        eqn_yd = yd[n-1]
+        eqn_zd = zd[n-1]
+
+        constraints = [eq0x, eq0y, eq0z, eqnx, eqny, eqnz, eqn_xd, eqn_yd, eqn_zd]
+        return constraints
 
     def unwind_coefficients(self, times, A3, B3, C3):
         """
         inputs: 3rd order polynomials
-        outputs: 
+        outputs:
         """
-        
+        pass
 
-    def objective_function(self, times, A, B,C):
+
+    def objective_function(self, X,n):
+        times = X[0:n]
+        A3 = X[n:2*n]
+        B3 = X[2*n:3*n]
+        C3 = X[3*n:4*n]
         return np.sum(times)
 
     def equality_constraints(self, times, A, B,C):
@@ -72,7 +220,7 @@ class WaypointOptimizer():
         z_eq = self.waypoints[1:, 2] - p_next_z
 
         return np.concatenate(x_eq, y_eq, z_eq)
-    
+
     def inequality_constraints(self, times, A,B,C):
         return None
 
@@ -97,52 +245,57 @@ class WaypointOptimizer():
         bounds = Bounds(x_lower, x_upper)
         return bounds
 
-# # Example code
-# def rosen_with_args(x, a, b):
-#     """The Rosenbrock function with additional arguments"""
-#     return sum(a*(x[1:]-x[:-1]**2.0)**2.0 + (1-x[:-1])**2.0) + b
-# x0 = np.array([1.3, 0.7, 0.8, 1.9, 1.2])
-# res = minimize(rosen_with_args, x0, method='nelder-mead',
-#                args=(0.5, 1.), options={'xatol': 1e-8, 'disp': True})
+def generate_waypoints(startPos, endPos):
+    poses = []
+    poses.append((startPos[0], startPos[1], startPos[2]))
+    poses.append((-0.25, -1.0, 0.25))
+    poses.append((-0.5, -2.0, 0.5))
+    poses.append((-0.5, -3.0, 0.5))
+    poses.append((-0.5, -4.0, 0.5))
+    poses.append((-0.5, -5.0, 0.5))
+    poses.append((-0.5, -3.0, 2.0))
+    poses.append((-0.5, -2.0, 2.0))
+    poses.append((-0.5, -1.0, 2.0))
+    poses.append((-0.5,  0.0, 2.0))
+    poses.append((-0.5,  1.0, 2.0))
+    poses.append((-0.5,  2.0, 2.0))
+    poses.append((-0.5,  1.0, 1.5))
+    poses.append((-0.5,  0.5, 1.0))
+    poses.append((-0.25,  0.25, 0.5))
+    poses.append([endPos[0], endPos[1], endPos[2]])
+    return np.array(poses)
 
-# from scipy.optimize import Bounds
-# bounds = Bounds([0, -0.5], [1.0, 2.0])
-# from scipy.optimize import LinearConstraint
-# linear_constraint = LinearConstraint([[1, 2], [2, 1]], [-np.inf, 1], [1, 1])
+def test():
 
-# def cons_f(x):
-#     return [x[0]**2 + x[1], x[0]**2 - x[1]]
-# def cons_J(x):
-#     return [[2*x[0], 1], [2*x[0], -1]]
-# def cons_H(x, v):
-#     return v[0]*np.array([[2, 0], [0, 0]]) + v[1]*np.array([[2, 0], [0, 0]])
-# from scipy.optimize import NonlinearConstraint
-# nonlinear_constraint = NonlinearConstraint(cons_f, -np.inf, 1, jac=cons_J, hess=cons_H)
+    # Load configuration.
 
-# x0 = np.array([0.5, 0])
-# res = minimize(rosen, x0, method='trust-constr', jac=rosen_der, hess=rosen_hess,
-#                constraints=[linear_constraint, nonlinear_constraint],
-#                options={'verbose': 1}, bounds=bounds)
-# print(res.x)
-# """Sequential least squares"""
-# ineq_cons = {'type': 'ineq',
-#              'fun' : lambda x: np.array([1 - x[0] - 2*x[1],
-#                                          1 - x[0]**2 - x[1],
-#                                          1 - x[0]**2 + x[1]]),
-#              'jac' : lambda x: np.array([[-1.0, -2.0],
-#                                          [-2*x[0], -1.0],
-#                                          [-2*x[0], 1.0]])}
-# eq_cons = {'type': 'eq',
-#            'fun' : lambda x: np.array([2*x[0] + x[1] - 1]),
-#            'jac' : lambda x: np.array([2.0, 1.0])}
+    initial_pos = [0,0,0]
+    end_pos = [0,0,0]
 
+    freq = 60
+    dt = 1/freq
+    data = {}
+    data["ctrl_freq"] = freq
+    data["max_speed_xy"] = 2
+    data["max_acceleration_xy"] = 11.2
+    data["max_speed_z"] = 2
+    data["max_acceleration_z"] = 0.517
+    data["max_jerk_xy"] = 2*data["max_acceleration_xy"] / dt
+    data["max_jerk_z"] = 2*data["max_acceleration_z"]/ dt
+    data["max_tilt"] = 1.46 * np.pi / 180.0 # radians
+    waypoints = generate_waypoints(initial_pos, end_pos)
 
-# x0 = np.array([0.5, 0])
-# res = minimize(rosen, x0, method='SLSQP', jac=rosen_der,
-#                constraints=[eq_cons, ineq_cons], options={'ftol': 1e-9, 'disp': True},
-#                bounds=bounds)
-# print(res.x)
+    optimizer = WaypointOptimizer(waypoints, data)
+    max_time = 60
+    res = optimizer.optimize_segments(max_time)
 
-# def cons_f(x):
-#     return [x[0]**2 + x[1], x[0]**2 - x[1]]
-# nonlinear_constraint = NonlinearConstraint(cons_f, -np.inf, 1, jac='2-point', hess=BFGS())
+    print(res)
+
+    print("------------------------------------")
+    print(res.x)
+    print(np.sum(res.x))
+
+    return
+
+if __name__ == "__main__":
+    test()

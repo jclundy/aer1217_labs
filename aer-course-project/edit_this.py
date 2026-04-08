@@ -63,9 +63,9 @@ class Controller():
             normal = np.array([np.sin(g[5]), np.cos(g[5])])
             if np.dot(normal, np.array([g[0], g[1]]) - np.array(current)) > 0:
                 normal = -normal
-            targets.append(([g[0] + 0.55*normal[0], g[1] + 0.55*normal[1]], goal_z))  # approach
+            targets.append(([g[0] + 0.70*normal[0], g[1] + 0.70*normal[1]], goal_z))  # approach
             targets.append(([g[0], g[1]], goal_z))                                    # gate center
-            targets.append(([g[0] - 0.55*normal[0], g[1] - 0.55*normal[1]], goal_z))  # exit
+            targets.append(([g[0] - 0.70*normal[0], g[1] - 0.70*normal[1]], goal_z))  # exit
             current = [g[0], g[1]]
         t = initial_info["x_reference"]
         targets.append(([t[0], t[2]], t[4]))  # final target
@@ -88,11 +88,6 @@ class Controller():
             current = goal
 
         self.waypoints = np.array(waypoints)
-
-        print(f"Obstacle positions: {[(ob[0], ob[1]) for ob in self.NOMINAL_OBSTACLES]}")
-        print("Waypoints:")
-        for i, wp in enumerate(self.waypoints):
-            print(f"  {i}: ({wp[0]:.2f}, {wp[1]:.2f}, {wp[2]:.2f})")
 
         ref_state = hardcoded_trajectory_generator(
             self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,

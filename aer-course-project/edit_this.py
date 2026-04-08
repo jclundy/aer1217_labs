@@ -1,356 +1,168 @@
-"""Write your proposed algorithm.
-[NOTE]: The idea for the final project is to plan the trajectory based on a sequence of gates
-while considering the uncertainty of the obstacles. The students should show that the proposed
-algorithm is able to safely navigate a quadrotor to complete the task in both simulation and
-real-world experiments.
-
-Then run:
-
-    $ python3 final_project.py --overrides ./getting_started.yaml
-
-Tips:
-    Search for strings `INSTRUCTIONS` and `REPLACE THIS (START)` in this file.
-
-    Change the code between the 5 blocks starting with
-        #########################
-        # REPLACE THIS (START) ##
-        #########################
-    and ending with
-        #########################
-        # REPLACE THIS (END) ####
-        #########################
-    with your own code.
-
-    They are in methods:
-        1) planning
-        2) cmdFirmware
-
-"""
 import numpy as np
-
 from collections import deque
 
 try:
     from project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory
 except ImportError:
-    # PyTest import.
     from .project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory
 
 #########################
 # REPLACE THIS (START) ##
 #########################
-
 from trajectory_generators import hardcoded_trajectory_generator
-
 try:
     import example_custom_utils as ecu
-    from example_custom_utils import plan_gate_sequence
 except ImportError:
     from . import example_custom_utils as ecu
-    from .example_custom_utils import plan_gate_sequence
-
 #########################
 # REPLACE THIS (END) ####
 #########################
 
+
 class Controller():
-    """Template controller class.
 
-    """
-
-    def __init__(self,
-                 initial_obs,
-                 initial_info,
-                 use_firmware: bool = False,
-                 buffer_size: int = 100,
-                 verbose: bool = False
-                 ):
-        """Initialization of the controller.
-
-        INSTRUCTIONS:
-            The controller's constructor has access the initial state `initial_obs` and the a priori infromation
-            contained in dictionary `initial_info`. Use this method to initialize constants, counters, pre-plan
-            trajectories, etc.
-
-        Args:
-            initial_obs (ndarray): The initial observation of the quadrotor's state
-                [x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r].
-            initial_info (dict): The a priori information as a dictionary with keys
-                'symbolic_model', 'nominal_physical_parameters', 'nominal_gates_pos_and_type', etc.
-            use_firmware (bool, optional): Choice between the on-board controll in `pycffirmware`
-                or simplified software-only alternative.
-            buffer_size (int, optional): Size of the data buffers used in method `learn()`.
-            verbose (bool, optional): Turn on and off additional printouts and plots.
-
-        """
-        # Save environment and control parameters.
+    def __init__(self, initial_obs, initial_info, use_firmware=False, buffer_size=100, verbose=False):
         self.CTRL_TIMESTEP = initial_info["ctrl_timestep"]
         self.CTRL_FREQ = initial_info["ctrl_freq"]
         self.initial_obs = initial_obs
         self.VERBOSE = verbose
         self.BUFFER_SIZE = buffer_size
-
-        # Store a priori scenario information.
-        # plan the trajectory based on the information of the (1) gates and (2) obstacles.
         self.NOMINAL_GATES = initial_info["nominal_gates_pos_and_type"]
         self.NOMINAL_OBSTACLES = initial_info["nominal_obstacles_pos"]
-
-        # Check for pycffirmware.
-        if use_firmware:
-            self.ctrl = None
-        else:
-            # Initialize a simple PID Controller for debugging and test.
-            # Do NOT use for the IROS 2022 competition.
-            self.ctrl = PIDController()
-            # Save additonal environment parameters.
+        self.ctrl = None if use_firmware else PIDController()
+        if not use_firmware:
             self.KF = initial_info["quadrotor_kf"]
-
-        # Reset counters and buffers.
         self.reset()
         self.interEpisodeReset()
-
-        # perform trajectory planning
         t_scaled = self.planning(use_firmware, initial_info)
-
-        ## visualization
-        # Plot trajectory in each dimension and 3D.
         plot_trajectory(t_scaled, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
-
-        # Draw the trajectory on PyBullet's GUI.
         draw_trajectory(initial_info, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
 
     def planning(self, use_firmware, initial_info):
-        """Trajectory planning using gate-centered waypoints with approach vectors."""
-
-        gate_sequence = [0, 1, 2, 3]  # <-- UPDATE THIS ON DEMO DAY
-
+        #########################
+        # REPLACE THIS (START) ##
+        #########################
+        gate_sequence = [0, 1, 2, 3]
         gates = initial_info["nominal_gates_pos_and_type"]
         tall_h = initial_info["gate_dimensions"]["tall"]["height"]
         low_h  = initial_info["gate_dimensions"]["low"]["height"]
         start_z = tall_h if use_firmware else self.initial_obs[4]
+        self.total_duration = 20
+
+        obstacles = [(ob[0], ob[1], 0.55) for ob in self.NOMINAL_OBSTACLES]
+        planner = ecu.RRTStar(obstacles, bounds=(-3.5, 3.5, -3.5, 3.5))
 
         waypoints = [[self.initial_obs[0], self.initial_obs[2], start_z]]
         current = [self.initial_obs[0], self.initial_obs[2]]
 
+        # Build key targets: approach + gate center + exit for each gate, then final target
+        targets = []
         for idx in gate_sequence:
             g = gates[idx]
             goal_z = tall_h if g[6] == 0 else low_h
-            gate_yaw = g[5]
-            normal = np.array([np.sin(gate_yaw), np.cos(gate_yaw)])
-            to_gate = np.array([g[0] - current[0], g[1] - current[1]])
-            if np.dot(normal, to_gate) > 0:
+            normal = np.array([np.sin(g[5]), np.cos(g[5])])
+            if np.dot(normal, np.array([g[0], g[1]]) - np.array(current)) > 0:
                 normal = -normal
-            approach = [g[0] + 0.6 * normal[0], g[1] + 0.6 * normal[1]]
-
-            # Insert midpoint on long segments to prevent polynomial overshoot
-            dist = np.hypot(approach[0] - current[0], approach[1] - current[1])
-            if dist > 2.0:
-                mid = [(current[0] + approach[0]) / 2,
-                    (current[1] + approach[1]) / 2,
-                    goal_z]
-                waypoints.append(mid)
-
-            waypoints.append([approach[0], approach[1], goal_z])
-            waypoints.append([g[0], g[1], goal_z])
+            targets.append(([g[0] + 0.55*normal[0], g[1] + 0.55*normal[1]], goal_z))  # approach
+            targets.append(([g[0], g[1]], goal_z))                                    # gate center
+            targets.append(([g[0] - 0.55*normal[0], g[1] - 0.55*normal[1]], goal_z))  # exit
             current = [g[0], g[1]]
+        t = initial_info["x_reference"]
+        targets.append(([t[0], t[2]], t[4]))  # final target
 
-        # Final target
-        target = initial_info["x_reference"]
-        waypoints.append([target[0], target[2], target[4]])
+        # For each target, use direct path or RRT* if blocked
+        current = [self.initial_obs[0], self.initial_obs[2]]
+        for (goal, goal_z) in targets:
+            if not planner._edge_free(ecu.Node(*current), ecu.Node(*goal)):
+                print(f"RRT* triggered: {current} -> {goal}")
+                path = planner.plan(current, goal)
+                path[-1] = goal
+                n = len(path)
+                for i, pt in enumerate(path[1:], 1):
+                    z = waypoints[-1][2] + (goal_z - waypoints[-1][2]) * i / (n - 1)
+                    waypoints.append([pt[0], pt[1], z])
+            else:
+                if np.hypot(goal[0]-current[0], goal[1]-current[1]) > 2.0:
+                    waypoints.append([(current[0]+goal[0])/2, (current[1]+goal[1])/2, goal_z])
+                waypoints.append([goal[0], goal[1], goal_z])
+            current = goal
+
         self.waypoints = np.array(waypoints)
 
-        # Single polynomial fit through all waypoints
-        total_duration = 20  # seconds; tune for speed
+        print(f"Obstacle positions: {[(ob[0], ob[1]) for ob in self.NOMINAL_OBSTACLES]}")
+        print("Waypoints:")
+        for i, wp in enumerate(self.waypoints):
+            print(f"  {i}: ({wp[0]:.2f}, {wp[1]:.2f}, {wp[2]:.2f})")
+
         ref_state = hardcoded_trajectory_generator(
-            self.initial_obs, initial_info, self.CTRL_FREQ, total_duration,
+            self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
             waypoints=self.waypoints
         )
+        self.ref_x, self.ref_y, self.ref_z = ref_state[:,0], ref_state[:,1], ref_state[:,2]
+        self.ref_vel, self.ref_acc         = ref_state[:,3:6], ref_state[:,6:9]
+        self.ref_euler, self.ref_euler_rates = ref_state[:,9:12], ref_state[:,12:15]
 
-        self.ref_x           = ref_state[:, 0]
-        self.ref_y           = ref_state[:, 1]
-        self.ref_z           = ref_state[:, 2]
-        self.ref_vel         = ref_state[:, 3:6]
-        self.ref_acc         = ref_state[:, 6:9]
-        self.ref_euler       = ref_state[:, 9:12]
-        self.ref_euler_rates = ref_state[:, 12:15]
-
-        t_scaled = np.linspace(0, total_duration, len(ref_state))
-        return t_scaled
-
-    def cmdFirmware(self,
-                    time,
-                    obs,
-                    reward=None,
-                    done=None,
-                    info=None
-                    ):
-        """Pick command sent to the quadrotor through a Crazyswarm/Crazyradio-like interface.
-
-        INSTRUCTIONS:
-            Re-implement this method to return the target position, velocity, acceleration, attitude, and attitude rates to be sent
-            from Crazyswarm to the Crazyflie using, e.g., a `cmdFullState` call.
-
-        Args:
-            time (float): Episode's elapsed time, in seconds.
-            obs (ndarray): The quadrotor's Vicon data [x, 0, y, 0, z, 0, phi, theta, psi, 0, 0, 0].
-            reward (float, optional): The reward signal.
-            done (bool, optional): Wether the episode has terminated.
-            info (dict, optional): Current step information as a dictionary with keys
-                'constraint_violation', 'current_target_gate_pos', etc.
-
-        Returns:
-            Command: selected type of command (takeOff, cmdFullState, etc., see Enum-like class `Command`).
-            List: arguments for the type of command (see comments in class `Command`)
-
-        """
-        if self.ctrl is not None:
-            raise RuntimeError("[ERROR] Using method 'cmdFirmware' but Controller was created with 'use_firmware' = False.")
-
-        # [INSTRUCTIONS]
-        # self.CTRL_FREQ is 30 (set in the getting_started.yaml file)
-        # control input iteration indicates the number of control inputs sent to the quadrotor
-        iteration = int(time*self.CTRL_FREQ)
-
-        #########################
-        # REPLACE THIS (START) ##
-        #########################
-
-        # print("The info. of the gates ")
-        # print(self.NOMINAL_GATES)
-
-        if iteration == 0:
-            height = 1
-            duration = 2
-
-            command_type = Command(2)  # Take-off.
-            args = [height, duration]
-
-        # [INSTRUCTIONS] Example code for using cmdFullState interface
-        elif iteration >= 3*self.CTRL_FREQ and iteration < 20*self.CTRL_FREQ:
-            step = min(iteration-3*self.CTRL_FREQ, len(self.ref_x) -1)
-
-            target_pos = np.array([self.ref_x[step], self.ref_y[step], self.ref_z[step]])
-            # target_pos = x_star[0:3].flatten()
-            target_vel = self.ref_vel[step].flatten()
-            target_acc = self.ref_acc[step].flatten()
-            target_yaw = self.ref_euler[step,2]
-            target_rpy_rates = self.ref_euler_rates[step]
-
-            command_type = Command(1)  # cmdFullState.
-            args = [target_pos, target_vel, target_acc, target_yaw, target_rpy_rates]
-
-        elif iteration == 20*self.CTRL_FREQ:
-            command_type = Command(6)  # Notify setpoint stop.
-            args = []
-
-       # [INSTRUCTIONS] Example code for using goTo interface
-        elif iteration == 20*self.CTRL_FREQ+1:
-            x = self.ref_x[-1]
-            y = self.ref_y[-1]
-            z = 1.5
-            yaw = 0.
-            duration = 2.5
-
-            command_type = Command(5)  # goTo.
-            args = [[x, y, z], yaw, duration, False]
-
-        elif iteration == 23*self.CTRL_FREQ:
-            x = self.initial_obs[0]
-            y = self.initial_obs[2]
-            z = 1.5
-            yaw = 0.
-            duration = 6
-
-            command_type = Command(5)  # goTo.
-            args = [[x, y, z], yaw, duration, False]
-
-        elif iteration == 30*self.CTRL_FREQ:
-            height = 0.
-            duration = 3
-
-            command_type = Command(3)  # Land.
-            args = [height, duration]
-
-        elif iteration == 33*self.CTRL_FREQ-1:
-            command_type = Command(4)  # STOP command to be sent once the trajectory is completed.
-            args = []
-
-        else:
-            command_type = Command(0)  # None.
-            args = []
-
+        return np.linspace(0, self.total_duration, len(ref_state))
         #########################
         # REPLACE THIS (END) ####
         #########################
 
+    def cmdFirmware(self, time, obs, reward=None, done=None, info=None):
+        if self.ctrl is not None:
+            raise RuntimeError("[ERROR] Using method 'cmdFirmware' but Controller was created with 'use_firmware' = False.")
+        iteration = int(time * self.CTRL_FREQ)
+        #########################
+        # REPLACE THIS (START) ##
+        #########################
+        if iteration == 0:
+            command_type, args = Command(2), [1, 2]  # takeoff
+
+        elif iteration >= 3*self.CTRL_FREQ and iteration < (self.total_duration+3)*self.CTRL_FREQ:
+            step = min(iteration - 3*self.CTRL_FREQ, len(self.ref_x)-1)
+            command_type = Command(1)  # cmdFullState
+            args = [np.array([self.ref_x[step], self.ref_y[step], self.ref_z[step]]),
+                    self.ref_vel[step].flatten(),
+                    self.ref_acc[step].flatten(),
+                    self.ref_euler[step, 2],
+                    self.ref_euler_rates[step]]
+
+        elif iteration == (self.total_duration+3)*self.CTRL_FREQ:
+            command_type, args = Command(6), []  # notify setpoint stop
+
+        elif iteration == (self.total_duration+3)*self.CTRL_FREQ + 1:
+            command_type = Command(5)  # goTo
+            args = [[self.ref_x[-1], self.ref_y[-1], 1.0], 0., 2.5, False]
+
+        elif iteration == (self.total_duration+6)*self.CTRL_FREQ:
+            command_type, args = Command(3), [0., 3]  # land
+
+        elif iteration == (self.total_duration+9)*self.CTRL_FREQ:
+            command_type, args = Command(4), []  # stop
+
+        else:
+            command_type, args = Command(0), []
+        #########################
+        # REPLACE THIS (END) ####
+        #########################
         return command_type, args
 
-    def cmdSimOnly(self,
-                   time,
-                   obs,
-                   reward=None,
-                   done=None,
-                   info=None
-                   ):
-        """PID per-propeller thrusts with a simplified, software-only PID quadrotor controller.
-
-        INSTRUCTIONS:
-            You do NOT need to re-implement this method for the project.
-            Only re-implement this method when `use_firmware` == False to return the target position and velocity.
-
-        Args:
-            time (float): Episode's elapsed time, in seconds.
-            obs (ndarray): The quadrotor's state [x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r].
-            reward (float, optional): The reward signal.
-            done (bool, optional): Wether the episode has terminated.
-            info (dict, optional): Current step information as a dictionary with keys
-                'constraint_violation', 'current_target_gate_pos', etc.
-
-        Returns:
-            List: target position (len == 3).
-            List: target velocity (len == 3).
-
-        """
+    def cmdSimOnly(self, time, obs, reward=None, done=None, info=None):
         if self.ctrl is None:
             raise RuntimeError("[ERROR] Attempting to use method 'cmdSimOnly' but Controller was created with 'use_firmware' = True.")
-
-        iteration = int(time*self.CTRL_FREQ)
-
-        #########################
-        if iteration < len(self.ref_x):
-            target_p = np.array([self.ref_x[iteration], self.ref_y[iteration], self.ref_z[iteration]])
-        else:
-            target_p = np.array([self.ref_x[-1], self.ref_y[-1], self.ref_z[-1]])
-        target_v = np.zeros(3)
-        #########################
-
-        return target_p, target_v
+        iteration = int(time * self.CTRL_FREQ)
+        step = min(iteration, len(self.ref_x)-1)
+        return np.array([self.ref_x[step], self.ref_y[step], self.ref_z[step]]), np.zeros(3)
 
     def reset(self):
-        """Initialize/reset data buffers and counters.
-
-        Called once in __init__().
-
-        """
-        # Data buffers.
         self.action_buffer = deque([], maxlen=self.BUFFER_SIZE)
-        self.obs_buffer = deque([], maxlen=self.BUFFER_SIZE)
+        self.obs_buffer    = deque([], maxlen=self.BUFFER_SIZE)
         self.reward_buffer = deque([], maxlen=self.BUFFER_SIZE)
-        self.done_buffer = deque([], maxlen=self.BUFFER_SIZE)
-        self.info_buffer = deque([], maxlen=self.BUFFER_SIZE)
-
-        # Counters.
+        self.done_buffer   = deque([], maxlen=self.BUFFER_SIZE)
+        self.info_buffer   = deque([], maxlen=self.BUFFER_SIZE)
         self.interstep_counter = 0
         self.interepisode_counter = 0
 
-    # NOTE: this function is not used in the course project.
     def interEpisodeReset(self):
-        """Initialize/reset learning timing variables.
-
-        Called between episodes in `getting_started.py`.
-
-        """
-        # Timing stats variables.
         self.interstep_learning_time = 0
         self.interstep_learning_occurrences = 0
         self.interepisode_learning_time = 0

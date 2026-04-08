@@ -68,11 +68,10 @@ class WaypointOptimizer():
         p_next = self.waypoints[1:,:]
         waypoint_min_lengths = np.linalg.norm(p_next - p_prev, axis=1)
 
-        # times must be gt eq zero
-        t_max = np.ones_like(t_min) * np.inf
         # times must also meet speed constraints
         t_min = waypoint_min_lengths / (self.max_speed_xy)
-
+        # times must be gt eq zero
+        t_max = np.ones_like(t_min) * np.inf
 
         # times must be gt eq zero
         A3_min = np.ones_like(t_min) * -self.max_jerk_xy
@@ -86,7 +85,7 @@ class WaypointOptimizer():
         lb = np.concatenate([t_min, A3_min, B3_min, C3_min])
         ub = np.concatenate([t_max, A3_max, B3_max, C3_max])
 
-        bounds = Bounds(t_min, t_max)
+        bounds = Bounds(lb, ub)
         return bounds
 
     def ineq_constraints(self, X, n):
@@ -105,7 +104,7 @@ class WaypointOptimizer():
         B1 = Bi[:,0]
         B2 = Bi[:,0]
 
-        Ci = self.unwind_coefficients(B3)
+        Ci = self.unwind_coefficients(C3)
         C0 = Ci[:,0]
         C1 = Ci[:,0]
         C2 = Ci[:,0]
@@ -135,17 +134,15 @@ class WaypointOptimizer():
         B3 = X[2*n:3*n]
         C3 = X[3*n:4*n]
 
-        Ai = self.unwind_coefficients(A3)
+        Ai, Bi, Ci = self.unwind_coefficients(times, A3, B3, C3)
         A0 = Ai[:,0]
         A1 = Ai[:,0]
         A2 = Ai[:,0]
 
-        Bi = self.unwind_coefficients(B3)
         B0 = Bi[:,0]
         B1 = Bi[:,0]
         B2 = Bi[:,0]
 
-        Ci = self.unwind_coefficients(B3)
         C0 = Ci[:,0]
         C1 = Ci[:,0]
         C2 = Ci[:,0]
@@ -176,15 +173,44 @@ class WaypointOptimizer():
         eqn_yd = yd[n-1]
         eqn_zd = zd[n-1]
 
-        constraints = [eq0x, eq0y, eq0z, eqnx, eqny, eqnz, eqn_xd, eqn_yd, eqn_zd]
+        constraints = np.array([eq0x, eq0y, eq0z, eqnx, eqny, eqnz, eqn_xd, eqn_yd, eqn_zd]).reshape(-1,1)
         return constraints
 
     def unwind_coefficients(self, times, A3, B3, C3):
+        
+        n = times.shape[0]
+        M = np.zeros((n,n))
+        M[1:,:] = np.tril(np.ones((n,n)))
+
+        A2 = 3 * M @ (A3 * times)
+        B2 = 3 * M @ (B3 * times)
+        C2 = 3 * M @ (C3 * times)
+
+        A1 = 2 * M @ (A2 * times) + 3 * M @ (A3 * times **2)
+        B1 = 2 * M @ (B2 * times) + 3 * M @ (B3 * times **2)
+        C1 = 2 * M @ (C2 * times) + 3 * M @ (C3 * times **2)
+
+        A1 = 2 * M @ (A2 * times) + 3 * M @ (A3 * times **2)
+        B1 = 2 * M @ (B2 * times) + 3 * M @ (B3 * times **2)
+        C1 = 2 * M @ (C2 * times) + 3 * M @ (C3 * times **2)
+
+        A0 = M @ (A1 * times) + M @ (A2 * times **2) + M @ (A3 * times **3)
+        A0 = A0 + self.waypoints[0][0]
+
+        B0 = M @ (B1 * times) + M @ (B2 * times **2) + M @ (B3 * times **3)
+        B0 = B0 + self.waypoints[0][1]
+
+        C0 = M @ (C1 * times) + M @ (C2 * times **2) + M @ (C3 * times **3)
+        C0 = C0 + self.waypoints[0][2]
+
+        Ai = np.concatenate([A0, A1, A2, A3]).reshape(-1,4)
+        Bi = np.concatenate([B0, B1, B2, B3]).reshape(-1,4)
+        Ci = np.concatenate([C0, C1, C2, C3]).reshape(-1,4)                
         """
         inputs: 3rd order polynomials
         outputs:
         """
-        pass
+        return Ai, Bi, Ci
 
 
     def objective_function(self, X,n):
@@ -228,22 +254,7 @@ class WaypointOptimizer():
         pass
         # linear_constraint = LinearConstraint([[1, 2], [2, 1]], [-np.inf, 1], [1, 1])
 
-    def bounds(self, times):
-        # Bounds(lb, ub)
-        # bounds = Bounds([0, -0.5], [1.0, 2.0])
-        t0 = np.zeros_like(times)
-        tmax = np.ones_like(times) * np.inf
-        A_min = np.ones_like(times) * -self.max_jerk_xy
-        A_max = np.ones_like(times) * self.max_jerk_xy
-        B_min = np.ones_like(times) * -self.max_jerk_xy
-        B_max = np.ones_like(times) * self.max_jerk_xy
-        C_min = np.ones_like(times) * -self.max_jerk_z
-        C_max = np.ones_like(times) * self.max_jerk_z
 
-        x_lower = np.concatenate([t0, A_min, B_min, C_min])
-        x_upper = np.concatenate([tmax, A_max, B_max, C_max])
-        bounds = Bounds(x_lower, x_upper)
-        return bounds
 
 def generate_waypoints(startPos, endPos):
     poses = []

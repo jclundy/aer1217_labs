@@ -48,9 +48,9 @@ class WaypointOptimizer():
         self.times = t_initial
         # A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = self.initialize_coefficients(t_initial)
 
-        x0 = np.concatenate(np.zeros((N*3,))).reshape(-1,1)
+        x0 = np.zeros((N*3,1))
 
-        print("x0=",x0.reshape(4,-1))
+        print("x0=",x0.reshape(3,-1))
 
         print("x0.shape", x0.shape)
 
@@ -91,13 +91,21 @@ class WaypointOptimizer():
         bounds = Bounds(lb, ub)
         return bounds
 
-    def nl_constraints(self, X, n):
-        times = X[0:n]
-        A3 = X[n:2*n]
-        B3 = X[2*n:3*n]
-        C3 = X[3*n:4*n]
+    def extract_decision_variables(self, X):
+        num_waypoints = self.waypoints.shape[0]
+        n = num_waypoints - 1
 
-        A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = self.unwind_coefficients(times, A3, B3, C3)
+        A3 = X[0:n]
+        B3 = X[n:2*n]
+        C3 = X[2*n:3*n]
+        
+        return A3,B3,C3
+
+    def nl_constraints(self, X, n):
+        A3, B3, C3 = self.extract_decision_variables(X)
+        times = self.times
+
+        A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = self.unwind_coefficients(A3, B3, C3)
         # constraint 1: acceleration constraint
         xdd = 2 * A2 + 6 * A3 * times
         ydd = 2 * B2 + 6 * B3 * times
@@ -159,26 +167,59 @@ class WaypointOptimizer():
         eqn_ydd = ydd - ydd1
         eqn_zdd = zdd - zdd1
 
-        return np.concatenate([xy_acceleration_constraint, z_acceleration_constraint, 
-                               xy_velocity_constraint, z_velocity_constraint,
-                               eqnx, eqny, eqnz, 
-                               eqnx1, eqny1, eqnz1, 
-                               eqn_xd, eqn_yd, eqn_zd,
-                               eqn_xdd, eqn_ydd, eqn_zdd]).flatten()
+        # return np.concatenate([xy_acceleration_constraint, z_acceleration_constraint, 
+        #                        xy_velocity_constraint, z_velocity_constraint,
+        #                        eqnx, eqny, eqnz, 
+        #                        eqnx1, eqny1, eqnz1, 
+        #                        eqn_xd, eqn_yd, eqn_zd,
+        #                        eqn_xdd, eqn_ydd, eqn_zdd]).flatten()
+        # return np.concatenate([eqnx, eqny, eqnz, 
+        #                        eqnx1, eqny1, eqnz1, 
+        #                        eqn_xd, eqn_yd, eqn_zd,
+        #                        eqn_xdd, eqn_ydd, eqn_zdd]).flatten()
+        # return np.concatenate([xy_acceleration_constraint, z_acceleration_constraint, 
+        #                        xy_velocity_constraint, z_velocity_constraint]).flatten()
+    
+        # constraints = np.concatenate([xy_acceleration_constraint, z_acceleration_constraint, 
+        #                        xy_velocity_constraint, z_velocity_constraint]).flatten()
+        # print("constraints.shape", constraints.shape)
+
+        constraints = np.concatenate([xydd, zdd, 
+                               xyd, zd]).flatten()
+
+        return constraints
+
 
     def constraint_lb(self, n):
-        num_constraints = 16*n
+        # num_constraints = 16*n
 
-        lb = np.ones((1, num_constraints)) * 0
-        lb[4*num_constraints:] = -1e-2
+        # lb = np.ones((1, num_constraints)) * 0
+        # lb[4*num_constraints:] = -1e-6
+        # return lb.flatten()
+
+        # lb = -1e-6
+
+        num_constraints = n * 4
+        print("num_constriaints", num_constraints)
+        lb = np.ones((1, num_constraints))
+        lb[0:n*2] = -self.max_acceleration_xy
+        lb[n*2:] = -self.max_speed_xy
+
         return lb.flatten()
 
-    def constraint_ub(self, n):
-        num_constraints = 16*n
 
-        ub = np.ones((1, num_constraints)) * np.inf
-        # equality constraints
-        ub[4*num_constraints:] = 1e-2
+    def constraint_ub(self, n):
+        num_constraints = n * 4
+        ub = np.ones((1, num_constraints))
+        # num_constraints = 16*n
+
+        # # equality constraints
+        # ub[4*num_constraints:] = 1e-6
+        # return ub.flatten()
+
+        # ub = 1e-6
+        ub[0:n*2] = self.max_acceleration_xy
+        ub[n*2:] = self.max_speed_xy
         return ub.flatten()
 
     def unwind_coefficients(self,A3, B3, C3):
@@ -186,6 +227,7 @@ class WaypointOptimizer():
         n = self.times.shape[0]
 
         times = self.times
+
         M = np.zeros((n,n))
         M[1:,:] = np.tril(np.ones((n-1,n)))
 
@@ -271,7 +313,75 @@ class WaypointOptimizer():
 
         return A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3
 
+    def position_error(self, A3,B3,C3):
+        times = self.times
+        n = self.N
+        A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = self.unwind_coefficients(A3, B3, C3)
+        # constraint 1: acceleration constraint
+        xdd = 2 * A2 + 6 * A3 * times
+        ydd = 2 * B2 + 6 * B3 * times
+        zdd = 2 * C2 + 6 * C3 * times
+        xydd = np.sqrt(xdd**2 + ydd**2)
 
+        xy_acceleration_constraint = self.max_acceleration_xy - xydd
+        z_acceleration_constraint = self.max_acceleration_z - zdd
+
+        # constraint 2: velocity constraint
+        xd = A1 + 2 * A2 * times + 3 * A3 * times**2
+        yd = B1 + 2 * B2 * times + 3 * B3 * times**2
+        zd = C1 + 2 * C2 * times + 3 * C3 * times**2
+        xyd = np.sqrt(xd**2 + yd**2)
+
+        xy_velocity_constraint = self.max_speed_xy - np.abs(xyd)
+        z_velocity_constraint = self.max_speed_z - np.abs(zd)
+
+        eq0x = A0[0] - self.waypoints[0,0]
+        eq0y = B0[0] - self.waypoints[0,1]
+        eq0z = C0[0] - self.waypoints[0,2]
+
+        # rest of positions
+        x = A0 + A1 * times + A2 * times**2 + A3 * times**3
+        y = B0 + B1 * times + B2 * times**2 + B3 * times**3
+        z = C0 + C1 * times + C2 * times**2 + C3 * times**3
+
+        eqnx = A0 - self.waypoints[0:n,0]
+        eqny = B0 - self.waypoints[0:n,1]
+        eqnz = C0 - self.waypoints[0:n,2]
+
+        eqnx1 = x - self.waypoints[1:,0]
+        eqny1 = y - self.waypoints[1:,1]
+        eqnz1 = z - self.waypoints[1:,2]
+
+        # last velocity is zero
+        xd = A1 + 2 * A2 * times + 3 * A3 * times**2
+        yd = B1 + 2 * B2 * times + 3 * B3 * times**2
+        zd = C1 + 2 * C2 * times + 3 * C3 * times**2
+
+        # Velocity equality constraint
+        xd0 = A1
+        yd0 = B1
+        zd0 = C1
+
+        xd1 = np.insert(A1[1:], n-1,0)
+        yd1 = np.insert(B1[1:], n-1,0)
+        zd1 = np.insert(C1[1:], n-1,0)
+
+        eqn_xd = xd - xd1
+        eqn_yd = yd - yd1
+        eqn_zd = zd - zd1
+
+        xdd1 = np.insert(2*A2[1:], n-1,0)
+        ydd1 = np.insert(2*B2[1:], n-1,0)
+        zdd1 = np.insert(2*C2[1:], n-1,0)
+
+        eqn_xdd = xdd - xdd1
+        eqn_ydd = ydd - ydd1
+        eqn_zdd = zdd - zdd1
+        # err_squared = eqnx1**2 + eqny1**2 + eqnz1**2
+
+        # print("eqnx1.shape", eqnx1.shape)
+        # print("squared.shape", err_squared.shape)
+        return np.sum([eqnx1**2, eqny1**2,eqnz1**2])
 
     def objective_function(self, X,n):
 
@@ -281,85 +391,13 @@ class WaypointOptimizer():
         # B3 = data[:,1]
         # C3 = data[:,2]
 
-        A3 = X[0:n]
-        B3 = X[n:2*n]
-        C3 = X[2*n:3*n]
+        A3, B3, C3 = self.extract_decision_variables(X)
+        times = self.times
         
-        jerk_integral = 36 * A3**2 * self.times
+        jerk_integral = 36 * (A3**2 * self.times + B3**2 * self.times + C3**2 * self.times)
+        error = self.position_error(A3,B3,C3)
 
-        return np.sum(jerk_integral)
-
-    def compute_states(self, X,dt):
-        n = self.N
-        durations = X[0:n]
-        A3 = X[n:2*n]
-        B3 = X[2*n:3*n]
-        C3 = X[3*n:4*n]
-
-        A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = self.unwind_coefficients(durations, A3, B3, C3)
-
-        total_duration = np.sum(durations)
-        print("total duration", total_duration)
-        print("dt", dt)
-        # times = np.arange(durations.shape[0]) * total_duration * dt
-
-        freq = 1/dt
-
-        times = np.linspace(0, total_duration, int(total_duration*freq))
-
-        # poly_indexes = 
-        x = np.zeros((times.shape[0],))
-        y = np.zeros((times.shape[0],))
-        z = np.zeros((times.shape[0],))
-
-        xd = np.zeros((times.shape[0],))
-        yd = np.zeros((times.shape[0],))
-        zd = np.zeros((times.shape[0],))
-
-        xdd = np.zeros((times.shape[0],))
-        ydd = np.zeros((times.shape[0],))
-        zdd = np.zeros((times.shape[0],))
-
-        segment_start_times = np.zeros((len(durations),1))
-        segment_end_times = np.zeros((len(durations),1))
-        # poly_indexes = []
-        for j in range(1,len(durations)):
-            segment_end_times[j-1] += durations[j-1]
-            segment_start_times[j] = segment_end_times[j-1]
-
-        for i in range(0, len(times)):
-            # find which polynomial to use
-            elapsed_time = i * dt
-            poly_idx = 0
-            for j in range(0,len(durations)):
-                if( elapsed_time <= segment_end_times[j]):
-                    break
-                poly_idx +=1
-            
-            if poly_idx >= len(durations):
-                poly_idx = len(durations)-1
-
-            ti = elapsed_time - segment_start_times[poly_idx]
-
-            xdd[i] = 2 * A2[poly_idx] + 6 * A3[poly_idx] * ti
-            ydd[i] = 2 * B2[poly_idx] + 6 * B3[poly_idx] * ti
-            zdd[i] = 2 * C2[poly_idx] + 6 * C3[poly_idx] * ti
-
-            xd[i] = A1[poly_idx] + 2 * A2[poly_idx] * ti + 3 * A3[poly_idx] * ti**2
-            yd[i] = B1[poly_idx] + 2 * B2[poly_idx] * ti + 3 * B3[poly_idx] * ti**2
-            zd[i] = C1[poly_idx] + 2 * C2[poly_idx] * ti + 3 * C3[poly_idx] * ti**2
-
-            x[i] = A0[poly_idx] + A1[poly_idx] * ti + A2[poly_idx] * ti**2 + A3[poly_idx] * ti**3
-            y[i] = B0[poly_idx] + B1[poly_idx] * ti + B2[poly_idx] * ti**2 + B3[poly_idx] * ti**3
-            z[i] = C0[poly_idx] + C1[poly_idx] * ti + C2[poly_idx] * ti**2 + C3[poly_idx] * ti**3
-
-        print("xdd.shape", xdd.shape)
-        print("xd.shape", xd.shape)
-        print("x.shape", x.shape)
-
-        return np.concatenate([times, x,y,z,xd,yd,zd,xdd,ydd,zdd]).reshape(-1,10)
-
-
+        return np.sum(error)
 
 def generate_waypoints():
     poses = []
@@ -370,71 +408,6 @@ def generate_waypoints():
             [2.0, -2.1, 1.0]]
     return np.array(poses).reshape(-1,3)
 
-
-def test():
-
-    # Load configuration.
-
-    initial_pos = [0,0,0]
-    end_pos = [0,0,0]
-
-    freq = 60
-    dt = 1/freq
-    data = {}
-    data["ctrl_freq"] = freq
-    data["max_speed_xy"] = 2
-    data["max_acceleration_xy"] = 11.2
-    data["max_speed_z"] = 2
-    data["max_acceleration_z"] = 0.517
-    data["max_jerk_xy"] = 2*data["max_acceleration_xy"] / dt
-    data["max_jerk_z"] = 2*data["max_acceleration_z"]/ dt
-    data["max_tilt"] = 1.46 * np.pi / 180.0 # radians
-    waypoints = generate_waypoints(initial_pos, end_pos)
-
-    optimizer = WaypointOptimizer(waypoints, data)
-    max_time = 360
-    res = optimizer.optimize_segments(max_time)
-
-    print(res)
-
-    print("------------------------------------")
-    print(res.x.shape)
-    print(res.x[0:optimizer.N])
-    print(np.sum(res.x[0:optimizer.N]))
-
-    states = optimizer.compute_states(res.x,dt)
-    print(states)
-
-    state_times = states[:,0]
-    print("state_times", state_times)
-
-    return
-
-def optimize_trajectory(waypoints):
-
-    # Load configuration.
-
-    initial_pos = [0,0,0]
-    end_pos = [0,0,0]
-
-    freq = 60
-    dt = 1/freq
-    data = {}
-    data["ctrl_freq"] = freq
-    data["max_speed_xy"] = 2
-    data["max_acceleration_xy"] = 11.2
-    data["max_speed_z"] = 2
-    data["max_acceleration_z"] = 0.517
-    data["max_jerk_xy"] = 2*data["max_acceleration_xy"] / dt
-    data["max_jerk_z"] = 2*data["max_acceleration_z"]/ dt
-    data["max_tilt"] = 1.46 * np.pi / 180.0 # radians
-
-    optimizer = WaypointOptimizer(waypoints, data)
-    max_time = 120
-    res = optimizer.optimize_segments(max_time)
-    states = optimizer.compute_states(res.x,dt)
-
-    return res, states # t, x, y,  z, xd, yd, zd, xdd, ydd, zdd
 
 import matplotlib.pyplot as plt
 
@@ -456,22 +429,33 @@ def main():
     data["max_tilt"] = 1.46 * np.pi / 180.0 # radians
 
     optimizer = WaypointOptimizer(waypoints, data)
-    max_time = 120
+    max_time = 60
     res = optimizer.optimize_segments(max_time)
 
     n = waypoints.shape[0] - 1
 
-    data = res.x.reshape(4,n).T
-    print("res.x", data)
+    # data = res.x.reshape(3,n).T
+    print("res.x", res.x)
 
-    times = res.x[0:n]
-    A3 = res.x[n:2*n]
-    B3 = res.x[2*n:3*n]
-    C3 = res.x[3*n:4*n]
+    A3, B3, C3 = optimizer.extract_decision_variables(res.x)
+    # A3 = res.x[0:n]
+    # B3 = res.x[n:2*n]
+    # C3 = res.x[2*n:3*n]
+    # C3 = res.x[3*n:4*n]
 
-    A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = optimizer.unwind_coefficients(times, A3, B3, C3)
+    print("A3", A3.reshape(1,-1))
+    print("B3", B3.reshape(1,-1))
+    print("C3", C3.reshape(1,-1))
 
-    print("A0.shape", A0.shape)
+    A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = optimizer.unwind_coefficients(A3, B3, C3)
+  
+
+    print("A0", A0.reshape(1,-1))
+    print("B0", B0.reshape(1,-1))
+    print("C0", C0.reshape(1,-1))
+
+    print("waypoints", waypoints)
+
     print("waypoints.shape", waypoints.shape)
     xdiff = A0 - waypoints[0:n, 0]
     ydiff = B0 - waypoints[0:n, 1]
@@ -487,7 +471,7 @@ def main():
 
     prev_duration = 0
     for idx in range(0,n):
-        duration = times[idx]
+        duration = optimizer.times[idx]
         nsample = int(duration * freq)
         ti = dt * np.arange(nsample)
 
@@ -513,16 +497,57 @@ def main():
     # y = states[:,2]
     # z = states[:,3]
 
-    ax = plt.figure().add_subplot(projection='3d')
-    ax.scatter(A0, B0, C0, marker='^')
-    ax.plot(x_array, y_array,z_array)
-    # ax.legend()
+    # ax.plot(x_array, y_array,z_array)
+    # ax.legend(["x","y","z"])
     wx = waypoints[:,0]
     wy = waypoints[:,1]
     wz = waypoints[:,2]
 
+
+    # ax.set_xlabel("x")
+    # ax.set_ylabel("y")
+    # ax.set_zlabel("z")
+    print("wx", wx)
+    print("wy", wy)
+    print("wz", wz)
+    print("A0", A0.flatten())
+    print("B0", B0.flatten())
+    print("C0", C0.flatten())
     # ax1 = plt.figure().add_subplot(projection='3d')
-    ax.scatter(wx, wy, wz, marker='o')
+    # ax.scatter(A0.flatten(), B0.flatten(), C0.flatten(), marker='o')
+
+    # xticks = np.arange(-3, 3, 10)
+    # yticks = np.arange(-3, 3, 10)
+    # zticks = np.arange(-3, 3, 10)
+
+    # ax.set_xticks(xticks)
+    # ax.set_xticks(yticks)
+    # ax.set_xticks(zticks)
+    print("wx.shape", wx.shape)
+    print("A0.flatten.shape",A0.flatten().shape)
+
+    tn = optimizer.times[n-1]
+    xn = A0[n-1] + A1[n-1] * tn + A2[n-1] * tn**2 + A3[n-1] * tn**3
+    yn = B0[n-1] + B1[n-1] * tn + B2[n-1] * tn**2 + B3[n-1] * tn**3
+    zn = C0[n-1] + C1[n-1] * tn + C2[n-1] * tn**2 + C3[n-1] * tn**3
+
+    A0_plus = np.concatenate([A0.flatten(), np.array([xn])])
+    B0_plus = np.concatenate([B0.flatten(), np.array([yn])])
+    C0_plus = np.concatenate([C0.flatten(), np.array([zn])])
+    # ax.scatter(wx, wy,wz, marker='o')
+    # ax = plt.figure().add_subplot(projection='3d')
+    # ax.scatter(A0.flatten(), B0.flatten(), C0.flatten(), marker='o')
+
+    ax1 = plt.figure().add_subplot()
+    ax1.scatter(A0_plus, B0_plus)
+    ax1.scatter(wx, wy)
+    ax1.set_xlabel("x")
+    ax1.set_ylabel("y")
+
+
+    # ax.set_xlabel("x")
+    # ax.set_ylabel("y")
+    # ax.set_zlabel("z")
 
     plt.show()
 

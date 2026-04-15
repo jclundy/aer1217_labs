@@ -45,15 +45,14 @@ class WaypointOptimizer():
         t_initial = waypoint_min_lengths / total_length * max_duration
         print("t_initial=",t_initial.reshape(1,-1))
 
-        A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = self.initialize_coefficients(t_initial)
+        self.times = t_initial
+        # A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = self.initialize_coefficients(t_initial)
 
-        x0 = np.concatenate([t_initial, np.zeros((N*3,)) ]).reshape(-1,1)
+        x0 = np.concatenate(np.zeros((N*3,))).reshape(-1,1)
 
         print("x0=",x0.reshape(4,-1))
 
         print("x0.shape", x0.shape)
-        print("t_initial.shape", t_initial.shape)
-        print("A0.shape", A0.shape)
 
         contraint_ub = self.constraint_ub(N)
         contraint_lb = self.constraint_lb(N)
@@ -77,20 +76,17 @@ class WaypointOptimizer():
 
         # times must also meet speed constraints
         print("self.dt", self.dt)
-        t_min = np.ones((N,)) * self.dt
-        # times must be gt eq zero
-        t_max = np.ones_like(t_min) * np.inf
 
         # times must be gt eq zero
-        A3_min = np.ones_like(t_min) * - np.inf
-        B3_min = np.ones_like(t_min) * - np.inf
-        C3_min = np.ones_like(t_min) * - np.inf
-        A3_max = np.ones_like(t_min) * np.inf
-        B3_max = np.ones_like(t_min) * np.inf
-        C3_max = np.ones_like(t_min) * np.inf
+        A3_min = np.ones((N,1)) * - np.inf
+        B3_min = np.ones((N,1)) * - np.inf
+        C3_min = np.ones((N,1)) * - np.inf
+        A3_max = np.ones((N,1)) * np.inf
+        B3_max = np.ones((N,1)) * np.inf
+        C3_max = np.ones((N,1)) * np.inf
 
-        lb = np.concatenate([t_min, A3_min, B3_min, C3_min]).flatten()
-        ub = np.concatenate([t_max, A3_max, B3_max, C3_max]).flatten()
+        lb = np.concatenate([A3_min, B3_min, C3_min]).flatten()
+        ub = np.concatenate([A3_max, B3_max, C3_max]).flatten()
 
         bounds = Bounds(lb, ub)
         return bounds
@@ -185,9 +181,11 @@ class WaypointOptimizer():
         ub[4*num_constraints:] = 1e-2
         return ub.flatten()
 
-    def unwind_coefficients(self, times, A3, B3, C3):
+    def unwind_coefficients(self,A3, B3, C3):
         
-        n = times.shape[0]
+        n = self.times.shape[0]
+
+        times = self.times
         M = np.zeros((n,n))
         M[1:,:] = np.tril(np.ones((n-1,n)))
 
@@ -277,22 +275,19 @@ class WaypointOptimizer():
 
     def objective_function(self, X,n):
 
-        data = X.reshape(4,n).T
+        # data = X.reshape(4,n).T
 
-        times = data[:,0] 
-        A3 = data[:,1]
-        B3 = data[:,2]
-        C3 = data[:,3]
+        # A3 = data[:,0]
+        # B3 = data[:,1]
+        # C3 = data[:,2]
 
-        times = X[0:n]
-        A3 = X[n:2*n]
-        B3 = X[2*n:3*n]
-        C3 = X[3*n:4*n]
+        A3 = X[0:n]
+        B3 = X[n:2*n]
+        C3 = X[2*n:3*n]
         
-        jerk_integral = 36 * A3**2 * times
+        jerk_integral = 36 * A3**2 * self.times
 
-        mu = 0.1
-        return np.sum(times)**2 + mu * np.sum(jerk_integral)
+        return np.sum(jerk_integral)
 
     def compute_states(self, X,dt):
         n = self.N

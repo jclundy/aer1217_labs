@@ -64,23 +64,23 @@ class CasadiSolver:
         c3_start = b3_end
         c3_end = c3_start + N 
 
-        lb = np.zeros(4 * N + 1)
+        lb = np.zeros(4 * N + 2)
         # total time lb
         lb[0] = 20
         # fraction equality constraint
         lb[1] = 0
 
         # fraction lower bound
-        ub[frac_start:frac_end] = 0
+        lb[frac_start:frac_end] = 0
         # A3 lower bound
-        ub[a3_start:a3_end] = -self.max_jerk_xy 
+        lb[a3_start:a3_end] = -self.max_jerk_xy 
         # B3 lower bound
-        ub[b3_start:b3_end] = -self.max_jerk_xy
+        lb[b3_start:b3_end] = -self.max_jerk_xy
         # C3 lower bound
-        ub[c3_start:c3_end] = -self.max_jerk_z
+        lb[c3_start:c3_end] = -self.max_jerk_z
 
 
-        ub = np.zeros(4 * N + 1)
+        ub = np.zeros(4 * N + 2)
         # total time lb
         ub[0] = total_duration
         # fraction equality constraint
@@ -122,7 +122,7 @@ class CasadiSolver:
         X = solution['x']
         t_total = X[0]
 
-        coeffs = X[1:].reshape(-1,4)
+        coeffs = X[1:].reshape((-1,4))
 
         fracs = coeffs[:,0]
         A3 = coeffs[:,1]
@@ -280,7 +280,7 @@ def main():
     print("B3", B3)
     print("C3", C3)
 
-    durations_star = fracs * t_total
+    durations_star = (fracs * t_total).reshape((-1,1))
 
     wx = waypoints[:,0]
     wy = waypoints[:,1]
@@ -293,9 +293,14 @@ def main():
     yn = B0[n-1] + B1[n-1] * tn + B2[n-1] * tn**2 + B3[n-1] * tn**3
     zn = C0[n-1] + C1[n-1] * tn + C2[n-1] * tn**2 + C3[n-1] * tn**3
 
-    A0_plus = np.concatenate([np.array(A0).flatten(), np.array([xn])])
-    B0_plus = np.concatenate([np.array(B0).flatten(), np.array([yn])])
-    C0_plus = np.concatenate([np.array(C0).flatten(), np.array([zn])])
+    print("A0.shape",A0.shape)
+    print("xn.shape",np.array([xn]).shape)
+
+    print("durations_star.shape",durations_star.shape)
+
+    A0_plus = np.concatenate([np.array(A0).flatten(), np.array([xn]).flatten()])
+    B0_plus = np.concatenate([np.array(B0).flatten(), np.array([yn]).flatten()])
+    C0_plus = np.concatenate([np.array(C0).flatten(), np.array([zn]).flatten()])
 
     print("A0_plus", A0_plus)
     print("B0_plus", B0_plus)

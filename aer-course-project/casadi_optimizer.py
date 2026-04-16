@@ -22,21 +22,27 @@ class CasadiSolver:
         self.max_accel_z = 0.517
         self.dt = 1/60
 
+        self.min_time = N * self.dt
+
         self.max_jerk_xy = 2 * self.max_accel_xy / self.dt
         self.max_jerk_z = 2 * self.max_accel_z / self.dt
 
         max_duration = np.sum(durations)
         fractions = durations / max_duration
 
+        computed_times = self.frac * self.total_duration
         x_error = position_error_1d(self.A3, waypoints[:,0], self.frac * self.total_duration)
 
         y_error = position_error_1d(self.B3, waypoints[:,1], self.frac * self.total_duration)
 
         z_error = position_error_1d(self.C3, waypoints[:,2], self.frac * self.total_duration)
 
-        cost = ca.sum(x_error **2) + ca.sum(y_error**2) + ca.sum(z_error**2) + self.total_duration
+        error_cost = ca.sum(x_error **2) + ca.sum(y_error**2) + ca.sum(z_error**2)
+        jerk_integral = 36 * ca.sum(self.A3**2 * computed_times) + ca.sum(self.B3**2 * computed_times) + ca.sum(self.C3**2 * computed_times)
 
-        # jerk_integral = 36 * ca.sum(self.A3**2 * self.times)
+        a1 = 2
+        a2 = 1
+        cost = a1 * error_cost + a2 * jerk_integral
 
 
         opt_variables = ca.vertcat(
@@ -66,7 +72,7 @@ class CasadiSolver:
 
         lb = np.zeros(4 * N + 2)
         # total time lb
-        lb[0] = 20
+        lb[0] = self.min_time
         # fraction equality constraint
         lb[1] = 0
 
@@ -224,6 +230,42 @@ def unwind_coefficients(A3, B3, C3, times, waypoints):
     C3 = np.array(C3).flatten()
     return A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3
 
+def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3):
+    x_vals = np.array([])
+    y_vals = np.array([])
+    z_vals = np.array([])
+    t_vals = np.array([])
+
+    prev_duration = 0
+    for idx in range(0,n):
+        duration = times[idx]
+        nsample = int(duration * freq)
+        ti = dt * np.arange(nsample)
+
+        xi = A0[idx] + A1[idx] * ti + A2[idx] * ti**2 + A3[idx] * ti**3
+        yi = B0[idx] + B1[idx] * ti + B2[idx] * ti**2 + B3[idx] * ti**3
+        zi = C0[idx] + C1[idx] * ti + C2[idx] * ti**2 + C3[idx] * ti**3
+
+        # ti_total = np.array(ti) + prev_duration
+
+        # print("nsample",nsample)
+        # print("ti.shape",ti.shape)
+        # print("ti_total.shape",ti_total.shape)
+        # print("t_vals.shape",t_vals.shape)
+
+        # t_vals = np.concatenate([t_vals, ti_total.flatten()])
+        x_vals = np.concatenate([x_vals, xi])
+        y_vals = np.concatenate([y_vals, yi])
+        z_vals = np.concatenate([z_vals, zi])
+        prev_duration = duration
+
+    t_array = t_vals.flatten()
+    x_array = np.array(x_vals).flatten()
+    y_array = np.array(y_vals).flatten()
+    z_array = np.array(z_vals).flatten()
+
+    return t_array, x_array, y_array, z_array
+
 def main():
     waypoints = generate_waypoints()
     print("waypoints=", waypoints.reshape(-1,3))
@@ -308,8 +350,19 @@ def main():
     print("waypoints=", waypoints.reshape(-1,3))
 
     ax0 = plt.figure().add_subplot(projection='3d')
-    ax0.scatter(A0_plus, B0_plus, C0_plus)
-    ax0.scatter(wx, wy, wz)
+    ax0.scatter(A0_plus, B0_plus, C0_plus, marker='^')
+    ax0.scatter(wx, wy, wz, marker='o')
+
+    # plot trajectory of quadrotor evalutaed at every timestep
+    ctrl_freq = 60.0
+    dt = 1/ctrl_freq
+    t_array, x_array, y_array, z_array = evalute_polynomials_over_control_time_step(durations_star, dt, n, ctrl_freq, A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3)
+
+    ax0.plot(x_array,y_array,z_array)
+    ax0.set_xlabel("x")
+    ax0.set_ylabel("y")
+    ax0.set_zlabel("z")
+
     plt.show()
 
 

@@ -37,6 +37,10 @@ class CasadiSolver:
 
         z_error = position_error_1d(self.C4, waypoints[:,2], computed_times)
 
+
+        # print('test')
+        # test_error = position_error_1d([1e-4, 1e-4, 1e-4], waypoints[:,0], durations)
+
         error_cost = ca.sum(x_error **2) + ca.sum(y_error**2) + ca.sum(z_error**2)
         jerk_integral = 36 * ca.sum(self.A4**2 * computed_times) + ca.sum(self.B4**2 * computed_times) + ca.sum(self.C4**2 * computed_times)
 
@@ -56,7 +60,7 @@ class CasadiSolver:
 
         g = []
         g.append(self.total_duration)
-        g.append(ca.sum(fractions) - 1)
+        g.append(ca.sum(fractions))
 
         g.append(self.frac)
         g.append(self.A4)
@@ -65,6 +69,16 @@ class CasadiSolver:
         g.append(x_error)
         g.append(y_error)
         g.append(z_error)
+
+
+        print("len(g)", len(g))
+        print("x_error", (x_error.shape))
+        print("y_error", (y_error.shape))
+        print("z_error", (z_error.shape))                
+        print("self.A4.shape", self.A4.shape)
+        print("self.B4.shape", self.B4.shape)
+        print("self.C4.shape", self.C4.shape)                
+        
 
         # print("x_error.shape", x_error.shape)
 
@@ -81,16 +95,16 @@ class CasadiSolver:
         # total time lb
         lb[0] = self.min_time
         # fraction equality constraint
-        lb[1] = 0
+        lb[1] = 1
 
         # fraction lower bound
         lb[frac_start:frac_end] = 0
         # A3 lower bound
-        lb[a3_start:a3_end] = -np.inf 
+        lb[a3_start:a3_end] = -self.max_jerk_xy  
         # B3 lower bound
-        lb[b3_start:b3_end] = -np.inf
+        lb[b3_start:b3_end] = -self.max_jerk_xy 
         # C3 lower bound
-        lb[c3_start:c3_end] = -np.inf
+        lb[c3_start:c3_end] = -self.max_jerk_xy 
         # position error lower bound
         lb[c3_end:] = -1e-3
 
@@ -99,7 +113,7 @@ class CasadiSolver:
         # total time lb
         ub[0] = max_duration
         # fraction equality constraint
-        ub[1] = 0
+        ub[1] = 1
  
         # fraction upper bound
         ub[frac_start:frac_end] = 1
@@ -169,10 +183,11 @@ def unroll_coefficients(P4, waypoints, times):
     P3 = 4 * ca.mtimes(M, P4) * times
 
     # P2 = 3 * M @ (P3 * times)
-    P2 = 3 * ca.mtimes(M, P3) * times + 6 * ca.mtimes([M,P4]) * times**2
+    P2 = 3 * ca.mtimes(M, P3) * times + 6 * ca.mtimes(M,P4) * times**2
 
     # P1 = 2 * M @ (P2 * times) + 3 * M @ (P3 * times **2)
-    P1 = 2 * ca.mtimes(M, P2) * times + 3* ca.mtimes(M, P3) * times **2 + 4 * ca.times(M, P4) * times**3
+
+    P1 = 2 * ca.mtimes(M, P2) * times + 3* ca.mtimes(M, P3) * times **2 + 4 * ca.mtimes(M, P4) * times**3
 
     # P0 = M @ (P1 * times) + M @ (P2 * times **2) + M @ (P3 * times **3) + waypoints[0]
     P0 =waypoints[0] +  ca.mtimes(M, P1) * times + ca.mtimes(M, P2) * times**2 + ca.mtimes(M, P3) * times**3 + ca.mtimes(M,P4) * times**4
@@ -182,7 +197,7 @@ def unroll_coefficients(P4, waypoints, times):
 
     return P0, P1, P2, P3, P4
 
-def position_error_1d(P3,waypoints, times):
+def position_error_1d(P4,waypoints, times):
 
     # n = waypoints.shape[0] - 1
 
@@ -198,6 +213,7 @@ def position_error_1d(P3,waypoints, times):
     # # P0 = M @ (P1 * times) + M @ (P2 * times **2) + M @ (P3 * times **3) + waypoints[0]
     # P0 = ca.mtimes(M, P1) * times + ca.mtimes(M, P2) * times**2 + ca.mtimes(M, P3) * times**3 + waypoints[0]
 
+    # times = times.flatten()
 
     P0, P1, P2, P3, P4 = unroll_coefficients(P4, waypoints, times)
 
@@ -211,7 +227,6 @@ def position_error_1d(P3,waypoints, times):
     # Velocity equality constraint
 
     # pd1 = np.insert(P1[1:], n-1,0)
-
     eqn_p1 = p - waypoints[1:]
 
     # eqn_pd = pd - pd1
@@ -242,7 +257,7 @@ def generate_waypoints():
 
     return np.array(poses).reshape(-1,3)
 
-def unwind_coefficients(A3, B3, C3, times, waypoints):
+def unwind_coefficients(A4, B4, C4, times, waypoints):
     
     # n = times.shape[0]
 
@@ -270,9 +285,9 @@ def unwind_coefficients(A3, B3, C3, times, waypoints):
     B0, B1, B2, B3, B4 = unroll_coefficients(B4, waypoints, times)
     C0, C1, C2, C3, C4 = unroll_coefficients(C4, waypoints, times)
 
-    Ai = np.concatenate([A0, A1, A2, A3,A4]).reshape(-1,4)
-    Bi = np.concatenate([B0, B1, B2, B3, B4]).reshape(-1,4)
-    Ci = np.concatenate([C0, C1, C2, C3, C4]).reshape(-1,4)                
+    # Ai = np.concatenate([A0, A1, A2, A3,A4]).reshape(-1,5)
+    # Bi = np.concatenate([B0, B1, B2, B3, B4]).reshape(-1,5)
+    # Ci = np.concatenate([C0, C1, C2, C3, C4]).reshape(-1,5)                
     """
     inputs: 3rd order polynomials
     outputs:
@@ -377,15 +392,15 @@ def main():
 
 
     
-    t_total, fracs, A3, B3, C3, solution = solver.solve_coefficients(X0)
+    t_total, fracs, A4, B4, C4, solution = solver.solve_coefficients(X0)
 
 
     print("solution", solution)
     print("t_total", t_total)
     print("fracs", fracs)
-    print("A3", A3)
-    print("B3", B3)
-    print("C3", C3)
+    print("A4", A4)
+    print("B4", B4)
+    print("C4", C4)
 
     durations_star = (fracs / np.sum(fracs) * t_total).reshape((-1,1))
 
@@ -393,7 +408,7 @@ def main():
     wy = waypoints[:,1]
     wz = waypoints[:,2]
 
-    A0, A1, A2, A3, A4, B0, B1, B2, B3, B4, C0, C1, C2, C3, C4 = unwind_coefficients(A3, B3, C3, durations_star, waypoints)
+    A0, A1, A2, A3, A4, B0, B1, B2, B3, B4, C0, C1, C2, C3, C4 = unwind_coefficients(A4, B4, C4, durations_star, waypoints)
 
     tn = durations_star[n-1]
     xn = A0[n-1] + A1[n-1] * tn + A2[n-1] * tn**2 + A3[n-1] * tn**3 + A4[n-1] * tn**4

@@ -27,8 +27,9 @@ Tips:
 
 """
 import numpy as np
-
 from collections import deque
+
+from example_custom_utils import gate_normal, gate_via_points, RRTStar
 
 try:
     from project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory
@@ -40,13 +41,9 @@ except ImportError:
 # REPLACE THIS (START) ##
 #########################
 
-# Optionally, create and import modules you wrote.
-# Please refrain from importing large or unstable 3rd party packages.
-try:
-    import example_custom_utils as ecu
-except ImportError:
-    # PyTest import.
-    from . import example_custom_utils as ecu
+##GATE ORDER
+
+GATE_ORDER = [1, 2, 3, 4]
 
 #########################
 # REPLACE THIS (END) ####
@@ -121,92 +118,80 @@ class Controller():
 
     def planning(self, use_firmware, initial_info):
         """Trajectory planning algorithm"""
-    
+        #########################
+        # REPLACE THIS (START) ##
+        #########################
         ## generate waypoints for planning
-        max_climb = 2 * 1 #m/s
-        max_forward = 2#m/s
-        max_descent = 0.5 #m/s
-        climb_height = 1
-        radius = 1
-        circle_center = [0,-3,1]
 
-        waypoints = []
+        self.waypoints = []
+        BOUNDS   = [[-3.5, 3.5], [-3.5, 3.5], [0.10, 1.95]]
+        Z_BOUNDS = (BOUNDS[2][0], BOUNDS[2][1])
 
-
-        wp0 = (-1,-3,0)
-        wp1 = (-1,-3,climb_height)
-        waypoints.append(wp0)
-        waypoints.append(wp1)
-        waypoints.append((0, -4, 1))
-        waypoints.append((1,-3,1))
-        waypoints.append((0,-2,1))
-        waypoints.append(wp1)
-        waypoints.append(wp0)
-
-        # Polynomial fit.
-        self.waypoints = np.array(waypoints)
-
-        climb_duration = (climb_height)/max_climb
-        curve1_z = np.linspace(0,climb_height, int(climb_duration*self.CTRL_FREQ))
-        curve1_x = np.ones((len(curve1_z),)) * wp0[0]
-        curve1_y = np.ones((len(curve1_z),)) * wp0[1]
-
-        curve1_zd = max_climb * np.ones((len(curve1_z),))
-        curve1_xd = 0 * np.ones((len(curve1_z),))
-        curve1_yd = 0 * np.ones((len(curve1_z),))
-
-        circumference = 2*np.pi*radius
-        circle_duration = circumference / max_forward
-        curve2_th = np.linspace(np.pi, -np.pi, int(circle_duration*self.CTRL_FREQ))
-        curve2_x = np.cos(curve2_th) * radius + circle_center[0]
-        curve2_y = np.sin(curve2_th) * radius + circle_center[1]
-        curve2_z = np.ones((len(curve2_th)),) * climb_height
-
-        curve2_zd = 0 * np.ones((len(curve2_th),))
-        curve2_xd = max_forward * np.cos(curve2_th + np.pi/2)
-        curve2_yd = max_forward * np.sin(curve2_th + np.pi/2)
-
-        descent_duration = climb_height / max_descent
-        curve3_z = np.linspace(climb_height,0, int(descent_duration*self.CTRL_FREQ))
-        curve3_x = np.ones((len(curve3_z),)) * curve2_x[-1]
-        curve3_y = np.ones((len(curve3_z),)) * curve2_y[-1]
-
-        curve3_zd = -max_descent * np.ones((len(curve3_z),))
-        curve3_xd = 0 * np.ones((len(curve3_z),))
-        curve3_yd = 0 * np.ones((len(curve3_z),))
-
-        rx = np.concatenate((curve1_x, curve2_x, curve3_x),axis=0)
-        ry = np.concatenate((curve1_y, curve2_y, curve3_y),axis=0)
-        rz = np.concatenate((curve1_z, curve2_z, curve3_z),axis=0)
-
-
-        rxd = np.concatenate((curve1_xd, curve2_xd, curve3_xd),axis=0)
-        ryd = np.concatenate((curve1_yd, curve2_yd, curve3_yd),axis=0)
-        rzd = np.concatenate((curve1_zd, curve2_zd, curve3_zd),axis=0)
-
-        # total_duration = climb_duration +  circle_duration + descent_duration
-        t_scaled = np.linspace(0, len(rx)/self.CTRL_FREQ, len(rx))
-        yaw = np.zeros((len(rx),))
-        yaw_start = int(climb_duration*self.CTRL_FREQ)
-        yaw_end = yaw_start + int(circle_duration*self.CTRL_FREQ)
-        print("yaw len", len(yaw))
-        print("th len", len(curve2_th))
-        print("yaw_start - yaw_end", yaw_end - yaw_start)
-        print(len(yaw[yaw_start:yaw_end]))
-
-        print("yaw start:" , yaw_start)
-        yaw[yaw_start:yaw_end] = curve2_th + np.pi / 2
+        ###start position    
+        if use_firmware:
+            start_pos = np.array([self.initial_obs[0], self.initial_obs[2],
+                           initial_info["gate_dimensions"]["tall"]["height"]]) ##need to check this from initial info
+        else:
+            start_pos = np.array([self.initial_obs[0], self.initial_obs[2], self.initial_obs[4]])
         
-        yaw[0:yaw_start] = curve2_th[0] + np.pi / 2
-        yaw[yaw_end:-1] = curve2_th[-1] + np.pi / 2
-        self.ref_x = rx
-        self.ref_y = ry
-        self.ref_z = rz
+        ##final hover 
+        goal_pose = np.array([ -0.5, 2.0, 1.0])
+        
+        pts = [start_pos]
+        for gid in GATE_ORDER:
+            pts.append(np.array([self.NOMINAL_GATES[gid-1][:3], gid]))
+            x, y, z = self.NOMINAL_GATES[gid-1][:3]
+            pts.append(np.array([x,y,z,gid]))
+        pts.append(goal_pose)
 
-        self.ref_xd = rxd
-        self.ref_yd = ryd
-        self.ref_zd = rzd
-        self.ref_yaw = yaw
+        buffer_pts = [pts[0]]
+        ###add entry and exit buffer to gate
+        for i in range(1, len(pts)-1):
+            approach, centre, departure = gate_via_points(self.NOMINAL_GATES[i-1], buffer_pts[-1], pts[i+1], buf=0.40, z_bounds=Z_BOUNDS)
+            buffer_pts.append(approach)
+            buffer_pts.append(centre)
+            buffer_pts.append(departure)
+        buffer_pts.append(pts[-1])
+
+        #set seed
+        seed = 42
+        full_path = [buffer_pts[0]] #add start point to full path
+
+        ##run RRT* for each segment between waypoints
+        for segid in range(len(buffer_pts)-1):
+            a = buffer_pts[segid]
+            b = buffer_pts[segid+1]
+
+            #pad bounding to speed up (***)
+            PAD    = 0.8
+            lo     = np.minimum(a, b) - PAD
+            hi     = np.maximum(a, b) + PAD
+            bounds = [
+                [max(lo[0], BOUNDS[0][0]), min(hi[0], BOUNDS[0][1])],
+                [max(lo[1], BOUNDS[1][0]), min(hi[1], BOUNDS[1][1])],
+                [max(lo[2], BOUNDS[2][0]), min(hi[2], BOUNDS[2][1])],
+            ]
+            ##RRT* call
+            planner = RRTStar(a, b, obstacles=self.NOMINAL_OBSTACLES, bounds=bounds, rng=np.random.default_rng(seed))
+            # seg_path = planner.plan()
+            seg_path = planner.plan(gate_id=GATE_ORDER[segid] if segid < len(GATE_ORDER) else None) ##make sure gate being passed
+            
+            ##add to path
+            full_path.extend(seg_path[1:])
+
+        print(f"Planned path, total waypoints {len(full_path)} ")
+
+
+        ##append waypoints and return time scalling for plotting
+        self.waypoints = np.array(full_path)
+        self.ref_x = self.waypoints[:, 0]
+        self.ref_y = self.waypoints[:, 1]
+        self.ref_z = self.waypoints[:, 2]
+        t_scaled = np.arange(len(full_path), dtype=float)
+
+        #########################
+        # REPLACE THIS (END) ####
+        #########################
 
         return t_scaled
 
@@ -251,67 +236,64 @@ class Controller():
         # print("The info. of the gates ")
         # print(self.NOMINAL_GATES)
 
-        # if iteration >= len(self.ref_x):
-        #     command_type = Command(0)  # None.
-        #     args = []
-        # else :
-        #     x = self.ref_x[iteration]
-        #     y = self.ref_y[iteration]
-        #     z = self.ref_z[iteration]
-        #     yaw = 0.
-        #     duration = 1/self.CTRL_FREQ
+        if iteration == 0:
+            height = 1
+            duration = 2
 
-        #     command_type = Command(5)  # goTo.
-        #     args = [[x, y, z], yaw, duration, False]
+            command_type = Command(2)  # Take-off.
+            args = [height, duration]
 
-        command_type = Command(0)  # None.
-        args = []
-
-        # if iteration == 0:
-        #     height = 1
-        #     duration = 2
-
-        #     command_type = Command(2)  # Take-off.
-        #     args = [height, duration]
-        # elif iteration == 2 * self.CTRL_FREQ:
-        #     x = -1 #self.ref_x[-1]
-        #     y = -3 #self.ref_y[-1]
-        #     z = 1 
-        #     yaw = 0.
-        #     duration = 2.5
-
-        #     command_type = Command(5)  # goTo.
-        #     args = [[x, y, z], yaw, duration, False]
-        # elif iteration == 4.5 * self.CTRL_FREQ:
-        #     height = 0.
-        #     duration = 3
-
-        #     command_type = Command(3)  # Land.
-        #     args = [height, duration]
-        # elif iteration == 7.5 * self.CTRL_FREQ:
-        #     command_type = Command(4) # STOP command
-        #     args = []
-
-        # elif iteration == 8 * self.CTRL_FREQ:
-        #     command_type = Command(0) # None
-        #     args = []
-
-        if iteration < len(self.ref_x):
-            target_pos = np.array([self.ref_x[iteration], self.ref_y[iteration], self.ref_z[iteration]])
-            target_vel = np.array([self.ref_xd[iteration], self.ref_yd[iteration], self.ref_zd[iteration]])
+        # [INSTRUCTIONS] Example code for using cmdFullState interface   
+        elif iteration >= 3*self.CTRL_FREQ and iteration < 20*self.CTRL_FREQ:
+            step = min(iteration-3*self.CTRL_FREQ, len(self.ref_x) -1)
+            target_pos = np.array([self.ref_x[step], self.ref_y[step], self.ref_z[step]])
+            target_vel = np.zeros(3)
             target_acc = np.zeros(3)
-            target_yaw = self.ref_yaw[iteration]
+            target_yaw = 0.
             target_rpy_rates = np.zeros(3)
 
             command_type = Command(1)  # cmdFullState.
             args = [target_pos, target_vel, target_acc, target_yaw, target_rpy_rates]
-        elif iteration == len(self.ref_x):
-            command_type = Command(4) # STOP command
-            args = []
-        # else:
-        #     command_type = Command(0)  # None.
-        #     args = []
 
+        elif iteration == 20*self.CTRL_FREQ:
+            command_type = Command(6)  # Notify setpoint stop.
+            args = []
+
+       # [INSTRUCTIONS] Example code for using goTo interface 
+        elif iteration == 20*self.CTRL_FREQ+1:
+            x = self.ref_x[-1]
+            y = self.ref_y[-1]
+            z = 1.5 
+            yaw = 0.
+            duration = 2.5
+
+            command_type = Command(5)  # goTo.
+            args = [[x, y, z], yaw, duration, False]
+
+        elif iteration == 23*self.CTRL_FREQ:
+            x = self.initial_obs[0]
+            y = self.initial_obs[2]
+            z = 1.5
+            yaw = 0.
+            duration = 6
+
+            command_type = Command(5)  # goTo.
+            args = [[x, y, z], yaw, duration, False]
+
+        elif iteration == 30*self.CTRL_FREQ:
+            height = 0.
+            duration = 3
+
+            command_type = Command(3)  # Land.
+            args = [height, duration]
+
+        elif iteration == 33*self.CTRL_FREQ-1:
+            command_type = Command(4)  # STOP command to be sent once the trajectory is completed.
+            args = []
+
+        else:
+            command_type = Command(0)  # None.
+            args = []
 
         #########################
         # REPLACE THIS (END) ####

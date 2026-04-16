@@ -11,9 +11,9 @@ class CasadiSolver:
         self.waypoints = waypoints
         N = waypoints.shape[0] - 1
         self.N = N
-        self.A3 = ca.SX.sym('A3', N)
-        self.B3 = ca.SX.sym('B3', N)
-        self.C3 = ca.SX.sym('C3', N)
+        self.A4 = ca.SX.sym('A4', N)
+        self.B4 = ca.SX.sym('B4', N)
+        self.C4 = ca.SX.sym('C4', N)
 
         self.frac = ca.SX.sym('t_frac', N)
         self.total_duration = ca.SX.sym('T')
@@ -31,14 +31,14 @@ class CasadiSolver:
         fractions = durations / max_duration
 
         computed_times = self.frac/(ca.sum(self.frac)) * self.total_duration
-        x_error = position_error_1d(self.A3, waypoints[:,0], computed_times)
+        x_error = position_error_1d(self.A4, waypoints[:,0], computed_times)
 
-        y_error = position_error_1d(self.B3, waypoints[:,1], computed_times)
+        y_error = position_error_1d(self.B4, waypoints[:,1], computed_times)
 
-        z_error = position_error_1d(self.C3, waypoints[:,2], computed_times)
+        z_error = position_error_1d(self.C4, waypoints[:,2], computed_times)
 
         error_cost = ca.sum(x_error **2) + ca.sum(y_error**2) + ca.sum(z_error**2)
-        jerk_integral = 36 * ca.sum(self.A3**2 * computed_times) + ca.sum(self.B3**2 * computed_times) + ca.sum(self.C3**2 * computed_times)
+        jerk_integral = 36 * ca.sum(self.A4**2 * computed_times) + ca.sum(self.B4**2 * computed_times) + ca.sum(self.C4**2 * computed_times)
 
         a1 = 0
         a2 = 0
@@ -50,18 +50,18 @@ class CasadiSolver:
         opt_variables = ca.vertcat(
             self.total_duration,
             ca.reshape(self.frac, -1, 1), 
-            ca.reshape(self.A3, -1, 1), 
-            ca.reshape(self.B3, -1, 1), 
-            ca.reshape(self.C3, -1, 1))
+            ca.reshape(self.A4, -1, 1), 
+            ca.reshape(self.B4, -1, 1), 
+            ca.reshape(self.C4, -1, 1))
 
         g = []
         g.append(self.total_duration)
         g.append(ca.sum(fractions) - 1)
 
         g.append(self.frac)
-        g.append(self.A3)
-        g.append(self.B3)
-        g.append(self.C3)
+        g.append(self.A4)
+        g.append(self.B4)
+        g.append(self.C4)
         g.append(x_error)
         g.append(y_error)
         g.append(z_error)
@@ -86,11 +86,11 @@ class CasadiSolver:
         # fraction lower bound
         lb[frac_start:frac_end] = 0
         # A3 lower bound
-        lb[a3_start:a3_end] = -self.max_jerk_xy 
+        lb[a3_start:a3_end] = -np.inf 
         # B3 lower bound
-        lb[b3_start:b3_end] = -self.max_jerk_xy
+        lb[b3_start:b3_end] = -np.inf
         # C3 lower bound
-        lb[c3_start:c3_end] = -self.max_jerk_z
+        lb[c3_start:c3_end] = -np.inf
         # position error lower bound
         lb[c3_end:] = -1e-3
 
@@ -148,26 +148,61 @@ class CasadiSolver:
 
         return t_total, fracs, A3, B3, C3, solution
 
-
-
-def position_error_1d(P3,waypoints, times):
-
+def unroll_coefficients(P4, waypoints, times):
     n = waypoints.shape[0] - 1
 
     M = np.zeros((n,n))
     M[1:,:] = np.tril(np.ones((n-1,n)))
 
+
+    # x = A0 + A1 t + A2 t^2 + A3 t^3 + A4 t^4
+    # dx (t) = A1 + 2 * A2 * t + 3 * A3 * t^2 + 4  * A4 * t^3
+    #  A1_1 = A1_0 + 2* A2 * t + 3 * A3_0 * t^2 + 4 * T^3
+
+
+
+    # DDX = 2 * A2 + 6 * A3 *t + 12 * A4 * t**2
+    ### 2 * A2_1 = 2 * A2_0 + 6 * A3_0 * t0 + 12 * A4 * t**2
+
+    # DDDX = 6 * A3 + 24 * A4  * t
+    ###  6 A3_1 = 6*A3_0 + 24 A4 * t => A3_1 = A3_0
+    P3 = 4 * ca.mtimes(M, P4) * times
+
     # P2 = 3 * M @ (P3 * times)
-    P2 = 3 * ca.mtimes([M, P3]) * times
+    P2 = 3 * ca.mtimes(M, P3) * times + 6 * ca.mtimes([M,P4]) * times**2
 
     # P1 = 2 * M @ (P2 * times) + 3 * M @ (P3 * times **2)
-    P1 = 2 * ca.mtimes(M, P2) * times + 3* ca.mtimes(M, P3) * times **2
+    P1 = 2 * ca.mtimes(M, P2) * times + 3* ca.mtimes(M, P3) * times **2 + 4 * ca.times(M, P4) * times**3
 
     # P0 = M @ (P1 * times) + M @ (P2 * times **2) + M @ (P3 * times **3) + waypoints[0]
-    P0 = ca.mtimes(M, P1) * times + ca.mtimes(M, P2) * times**2 + ca.mtimes(M, P3) * times**3 + waypoints[0]
+    P0 =waypoints[0] +  ca.mtimes(M, P1) * times + ca.mtimes(M, P2) * times**2 + ca.mtimes(M, P3) * times**3 + ca.mtimes(M,P4) * times**4
 
     # p = P0 + P1 * times + P2 * times**2 + P3 * times**3
-    p = P0 + P1 * times + P2*times**2 + P3 * times**3
+    # p = P0 + P1 * times + P2*times**2 + P3 * times**3
+
+    return P0, P1, P2, P3, P4
+
+def position_error_1d(P3,waypoints, times):
+
+    # n = waypoints.shape[0] - 1
+
+    # M = np.zeros((n,n))
+    # M[1:,:] = np.tril(np.ones((n-1,n)))
+
+    # # P2 = 3 * M @ (P3 * times)
+    # P2 = 3 * ca.mtimes([M, P3]) * times
+
+    # # P1 = 2 * M @ (P2 * times) + 3 * M @ (P3 * times **2)
+    # P1 = 2 * ca.mtimes(M, P2) * times + 3* ca.mtimes(M, P3) * times **2
+
+    # # P0 = M @ (P1 * times) + M @ (P2 * times **2) + M @ (P3 * times **3) + waypoints[0]
+    # P0 = ca.mtimes(M, P1) * times + ca.mtimes(M, P2) * times**2 + ca.mtimes(M, P3) * times**3 + waypoints[0]
+
+
+    P0, P1, P2, P3, P4 = unroll_coefficients(P4, waypoints, times)
+
+    # p = P0 + P1 * times + P2 * times**2 + P3 * times**3
+    p = P0 + P1 * times + P2*times**2 + P3 * times**3 + P4 * times**2
 
     # last velocity is zero
     # pd = P1 + 2 * P2 * times + 3 * P3 * times**2
@@ -209,31 +244,35 @@ def generate_waypoints():
 
 def unwind_coefficients(A3, B3, C3, times, waypoints):
     
-    n = times.shape[0]
+    # n = times.shape[0]
 
-    M = np.zeros((n,n))
-    M[1:,:] = np.tril(np.ones((n-1,n)))
+    # M = np.zeros((n,n))
+    # M[1:,:] = np.tril(np.ones((n-1,n)))
 
-    A2 = 3 * M @ (A3 * times)
-    B2 = 3 * M @ (B3 * times)
-    C2 = 3 * M @ (C3 * times)
+    # A2 = 3 * M @ (A3 * times)
+    # B2 = 3 * M @ (B3 * times)
+    # C2 = 3 * M @ (C3 * times)
 
-    A1 = 2 * M @ (A2 * times) + 3 * M @ (A3 * times **2)
-    B1 = 2 * M @ (B2 * times) + 3 * M @ (B3 * times **2)
-    C1 = 2 * M @ (C2 * times) + 3 * M @ (C3 * times **2)
+    # A1 = 2 * M @ (A2 * times) + 3 * M @ (A3 * times **2)
+    # B1 = 2 * M @ (B2 * times) + 3 * M @ (B3 * times **2)
+    # C1 = 2 * M @ (C2 * times) + 3 * M @ (C3 * times **2)
 
-    A0 = M @ (A1 * times) + M @ (A2 * times **2) + M @ (A3 * times **3) + waypoints[0,0]
-    # A0 = self.waypoints[0:n,0]       
+    # A0 = M @ (A1 * times) + M @ (A2 * times **2) + M @ (A3 * times **3) + waypoints[0,0]
+    # # A0 = self.waypoints[0:n,0]       
 
-    B0 = M @ (B1 * times) + M @ (B2 * times **2) + M @ (B3 * times **3) + waypoints[0,1]
-    # B0 = self.waypoints[0:n,1]
+    # B0 = M @ (B1 * times) + M @ (B2 * times **2) + M @ (B3 * times **3) + waypoints[0,1]
+    # # B0 = self.waypoints[0:n,1]
 
-    C0 = M @ (C1 * times) + M @ (C2 * times **2) + M @ (C3 * times **3) + waypoints[0,2]
-    # C0 = self.waypoints[0:n,2]
+    # C0 = M @ (C1 * times) + M @ (C2 * times **2) + M @ (C3 * times **3) + waypoints[0,2]
+    # # C0 = self.waypoints[0:n,2]
 
-    Ai = np.concatenate([A0, A1, A2, A3]).reshape(-1,4)
-    Bi = np.concatenate([B0, B1, B2, B3]).reshape(-1,4)
-    Ci = np.concatenate([C0, C1, C2, C3]).reshape(-1,4)                
+    A0, A1, A2, A3, A4 = unroll_coefficients(A4, waypoints, times)
+    B0, B1, B2, B3, B4 = unroll_coefficients(B4, waypoints, times)
+    C0, C1, C2, C3, C4 = unroll_coefficients(C4, waypoints, times)
+
+    Ai = np.concatenate([A0, A1, A2, A3,A4]).reshape(-1,4)
+    Bi = np.concatenate([B0, B1, B2, B3, B4]).reshape(-1,4)
+    Ci = np.concatenate([C0, C1, C2, C3, C4]).reshape(-1,4)                
     """
     inputs: 3rd order polynomials
     outputs:
@@ -242,17 +281,21 @@ def unwind_coefficients(A3, B3, C3, times, waypoints):
     A1 = np.array(A1).flatten()
     A2 = np.array(A2).flatten()
     A3 = np.array(A3).flatten()
+    A4 = np.array(A4).flatten()
+
     B0 = np.array(B0).flatten()
     B1 = np.array(B1).flatten()
     B2 = np.array(B2).flatten()
     B3 = np.array(B3).flatten()
+    B4 = np.array(B4).flatten()
+
     C0 = np.array(C0).flatten()
     C1 = np.array(C1).flatten()
     C2 = np.array(C2).flatten()
-    C3 = np.array(C3).flatten()
-    return A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3
+    C4 = np.array(C4).flatten()
+    return A0, A1, A2, A3, A4, B0, B1, B2, B3,B4, C0, C1, C2, C3, C4
 
-def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3):
+def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A3, A4, B0, B1, B2, B3,B4, C0, C1, C2, C3, C4):
     x_vals = np.array([])
     y_vals = np.array([])
     z_vals = np.array([])
@@ -264,9 +307,9 @@ def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A
         nsample = int(duration * freq)
         ti = dt * np.arange(nsample)
 
-        xi = A0[idx] + A1[idx] * ti + A2[idx] * ti**2 + A3[idx] * ti**3
-        yi = B0[idx] + B1[idx] * ti + B2[idx] * ti**2 + B3[idx] * ti**3
-        zi = C0[idx] + C1[idx] * ti + C2[idx] * ti**2 + C3[idx] * ti**3
+        xi = A0[idx] + A1[idx] * ti + A2[idx] * ti**2 + A3[idx] * ti**3 + A4[idx] * ti**4
+        yi = B0[idx] + B1[idx] * ti + B2[idx] * ti**2 + B3[idx] * ti**3 + B4[idx] * ti**4
+        zi = C0[idx] + C1[idx] * ti + C2[idx] * ti**2 + C3[idx] * ti**3 + C4[idx] * ti**4
 
         # ti_total = np.array(ti) + prev_duration
 
@@ -350,12 +393,12 @@ def main():
     wy = waypoints[:,1]
     wz = waypoints[:,2]
 
-    A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = unwind_coefficients(A3, B3, C3, durations_star, waypoints)
+    A0, A1, A2, A3, A4, B0, B1, B2, B3, B4, C0, C1, C2, C3, C4 = unwind_coefficients(A3, B3, C3, durations_star, waypoints)
 
     tn = durations_star[n-1]
-    xn = A0[n-1] + A1[n-1] * tn + A2[n-1] * tn**2 + A3[n-1] * tn**3
-    yn = B0[n-1] + B1[n-1] * tn + B2[n-1] * tn**2 + B3[n-1] * tn**3
-    zn = C0[n-1] + C1[n-1] * tn + C2[n-1] * tn**2 + C3[n-1] * tn**3
+    xn = A0[n-1] + A1[n-1] * tn + A2[n-1] * tn**2 + A3[n-1] * tn**3 + A4[n-1] * tn**4
+    yn = B0[n-1] + B1[n-1] * tn + B2[n-1] * tn**2 + B3[n-1] * tn**3 + B4[n-1] * tn**4
+    zn = C0[n-1] + C1[n-1] * tn + C2[n-1] * tn**2 + C3[n-1] * tn**3 + C4[n-1] * tn**4
 
     print("A0.shape",A0.shape)
     print("xn.shape",np.array([xn]).shape)
@@ -378,7 +421,7 @@ def main():
     # plot trajectory of quadrotor evalutaed at every timestep
     ctrl_freq = 60.0
     dt = 1/ctrl_freq
-    t_array, x_array, y_array, z_array = evalute_polynomials_over_control_time_step(durations_star, dt, n, ctrl_freq, A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3)
+    t_array, x_array, y_array, z_array = evalute_polynomials_over_control_time_step(durations_star, dt, n, ctrl_freq, A0, A1, A2, A3, A4, B0, B1, B2, B3, B4, C0, C1, C2, C3, C4)
 
     ax0.plot(x_array,y_array,z_array)
     ax0.set_xlabel("x")

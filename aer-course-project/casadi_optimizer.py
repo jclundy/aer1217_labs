@@ -24,8 +24,8 @@ class CasadiSolver:
 
         self.min_time = 5
 
-        self.max_jerk_xy = 2 * self.max_accel_xy / self.dt * 0.01
-        self.max_jerk_z = 2 * self.max_accel_z / self.dt * 0.01
+        self.max_jerk_xy = np.inf # 2 * self.max_accel_xy / self.dt * 0.01
+        self.max_jerk_z = np.inf #2 * self.max_accel_z / self.dt * 0.01
 
         max_duration = np.sum(durations)
         fractions = durations / max_duration

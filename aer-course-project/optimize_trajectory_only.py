@@ -28,36 +28,24 @@ class WaypointOptimizer():
 
         self.N = num_waypoints-1
 
-    def optimize_segments(self, max_duration):
-        t = np.arange(self.waypoints.shape[0])
-        num_waypoints = self.waypoints.shape[0]
-
-        N = num_waypoints-1
-
-        objective_func = lambda x: self.objective_function(x, N)
-        bounds = self.bounds()
-
-        p_prev = self.waypoints[0:N,:]
-        p_next = self.waypoints[1:,:]
-        waypoint_min_lengths = np.linalg.norm(p_next - p_prev, axis=1)
-        print("waypoint_min_lengths=",waypoint_min_lengths.reshape(1,-1))
-        total_length = np.sum(waypoint_min_lengths)
-        t_initial = waypoint_min_lengths / total_length * max_duration
-        print("t_initial=",t_initial.reshape(1,-1))
+    def optimize_segments(self, t_initial, points):
 
         self.times = t_initial
+        N = points.shape[0] - 1
         # A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = self.initialize_coefficients(t_initial)
 
-        x0 = np.zeros((N*3,1))
+        x0 = np.zeros((N,1))
 
-        print("x0=",x0.reshape(3,-1))
-
+        print("x0=",x0.reshape(1,-1))
         print("x0.shape", x0.shape)
+
+        objective_func = lambda x: self.objective_function_1d(x, N,points)
+        bounds = self.bounds()
 
         contraint_ub = self.constraint_ub(N)
         contraint_lb = self.constraint_lb(N)
 
-        constraint_func = lambda x: self.nl_constraints(x,N)
+        constraint_func = lambda x: self.nl_constraints_single_axis(x,N, points)
         nonl_constraints = NonlinearConstraint(constraint_func,contraint_lb, contraint_ub, jac='3-point', hess=BFGS())
 
         res = minimize(objective_func, x0, method='SLSQP',  jac='3-point',
@@ -78,17 +66,17 @@ class WaypointOptimizer():
         print("self.dt", self.dt)
 
         # times must be gt eq zero
-        A3_min = np.ones((N,1)) * - np.inf
-        B3_min = np.ones((N,1)) * - np.inf
-        C3_min = np.ones((N,1)) * - np.inf
-        A3_max = np.ones((N,1)) * np.inf
-        B3_max = np.ones((N,1)) * np.inf
-        C3_max = np.ones((N,1)) * np.inf
+        # A3_min = np.ones((N,1)) * - np.inf
+        # B3_min = np.ones((N,1)) * - np.inf
+        # C3_min = np.ones((N,1)) * - np.inf
+        # A3_max = np.ones((N,1)) * np.inf
+        # B3_max = np.ones((N,1)) * np.inf
+        # C3_max = np.ones((N,1)) * np.inf
 
-        lb = np.concatenate([A3_min, B3_min, C3_min]).flatten()
-        ub = np.concatenate([A3_max, B3_max, C3_max]).flatten()
+        # lb = np.concatenate([A3_min, B3_min, C3_min]).flatten()
+        # ub = np.concatenate([A3_max, B3_max, C3_max]).flatten()
 
-        bounds = Bounds(lb, ub)
+        bounds = Bounds(-self.max_jerk_xy, self.max_jerk_xy)
         return bounds
 
     def extract_decision_variables(self, X):
@@ -100,6 +88,40 @@ class WaypointOptimizer():
         C3 = X[2*n:3*n]
         
         return A3,B3,C3
+
+    def nl_constraints_single_axis(self, X, n, waypoints):
+        P3 = X
+
+        times = self.times
+
+        M = np.zeros((n,n))
+        M[1:,:] = np.tril(np.ones((n-1,n)))
+
+        P2 = 3 * M @ (P3 * times)
+
+        P1 = 2 * M @ (P2 * times) + 3 * M @ (P3 * times **2)
+
+        P0 = M @ (P1 * times) + M @ (P2 * times **2) + M @ (P3 * times **3) + waypoints[0]
+
+        p = P0 + P1 * times + P2 * times**2 + P3 * times**3
+
+        # last velocity is zero
+        pd = P1 + 2 * P2 * times + 3 * P3 * times**2
+        pdd = 2 * P2 + 6 * P3 * times
+
+        # # Velocity equality constraint
+
+        # pd1 = np.insert(P1[1:], n-1,0)
+
+        # eqn_p1 = p - waypoints[1:]
+
+        # eqn_pd = pd - pd1
+
+        # pdd1 = np.insert(2*P2[1:], n-1,0)
+
+        # eqn_pdd = pdd - pdd1
+
+        return np.concatenate([np.abs(pd) - self.max_speed_xy, np.abs(pdd) - self.max_acceleration_xy]).flatten()
 
     def nl_constraints(self, X, n):
         A3, B3, C3 = self.extract_decision_variables(X)
@@ -199,13 +221,14 @@ class WaypointOptimizer():
 
         # lb = -1e-6
 
-        num_constraints = n * 4
-        print("num_constriaints", num_constraints)
-        lb = np.ones((1, num_constraints))
-        lb[0:n*2] = -self.max_acceleration_xy
-        lb[n*2:] = -self.max_speed_xy
+        # num_constraints = n * 4
+        # print("num_constriaints", num_constraints)
+        # lb = np.ones((1, num_constraints))
+        # lb[0:n*2] = -self.max_acceleration_xy
+        # lb[n*2:] = -self.max_speed_xy
 
-        return lb.flatten()
+        # return lb.flatten()
+        return -np.inf
 
 
     def constraint_ub(self, n):
@@ -218,9 +241,11 @@ class WaypointOptimizer():
         # return ub.flatten()
 
         # ub = 1e-6
-        ub[0:n*2] = self.max_acceleration_xy
-        ub[n*2:] = self.max_speed_xy
-        return ub.flatten()
+        # ub[0:n*2] = self.max_acceleration_xy
+        # ub[n*2:] = self.max_speed_xy
+        # return ub.flatten()
+    
+        return 0
 
     def unwind_coefficients(self,A3, B3, C3):
         
@@ -383,6 +408,46 @@ class WaypointOptimizer():
         # print("squared.shape", err_squared.shape)
         return np.sum([eqnx1**2, eqny1**2,eqnz1**2])
 
+    def position_error_1d(self, X,n, waypoints):
+        P3 = X
+
+        times = self.times
+
+        M = np.zeros((n,n))
+        M[1:,:] = np.tril(np.ones((n-1,n)))
+
+        P2 = 3 * M @ (P3 * times)
+
+        P1 = 2 * M @ (P2 * times) + 3 * M @ (P3 * times **2)
+
+        P0 = M @ (P1 * times) + M @ (P2 * times **2) + M @ (P3 * times **3) + waypoints[0]
+
+        p = P0 + P1 * times + P2 * times**2 + P3 * times**3
+
+        # last velocity is zero
+        pd = P1 + 2 * P2 * times + 3 * P3 * times**2
+        pdd = 2 * P2 + 6 * P3 * times
+
+        # Velocity equality constraint
+
+        pd1 = np.insert(P1[1:], n-1,0)
+
+        eqn_p1 = p - waypoints[1:]
+
+        eqn_pd = pd - pd1
+
+        pdd1 = np.insert(2*P2[1:], n-1,0)
+
+        eqn_pdd = pdd - pdd1
+
+        return eqn_p1
+
+    def objective_function_1d(self,X,n,waypoints):
+        P3 = X
+        jerk_integral = 36 * (P3**2 * self.times)
+        error = self.position_error_1d(P3,n,waypoints)
+        return sum(error**2)
+
     def objective_function(self, X,n):
 
         # data = X.reshape(4,n).T
@@ -430,22 +495,41 @@ def main():
 
     optimizer = WaypointOptimizer(waypoints, data)
     max_time = 60
-    res = optimizer.optimize_segments(max_time)
+
+    N = waypoints.shape[0]-1
+
+
+    p_prev = waypoints[0:N,:]
+    p_next = waypoints[1:,:]
+    waypoint_min_lengths = np.linalg.norm(p_next - p_prev, axis=1)
+    print("waypoint_min_lengths=",waypoint_min_lengths.reshape(1,-1))
+    total_length = np.sum(waypoint_min_lengths)
+    t_initial = waypoint_min_lengths / total_length * max_time
+
+    res_A = optimizer.optimize_segments(t_initial, waypoints[:, 0])
+    res_B = optimizer.optimize_segments(t_initial, waypoints[:, 1])
+    res_C = optimizer.optimize_segments(t_initial, waypoints[:, 2])
 
     n = waypoints.shape[0] - 1
 
     # data = res.x.reshape(3,n).T
-    print("res.x", res.x)
+    print("res_A.x", res_A.x)
+    print("res_B.x", res_B.x)
+    print("res_C.x", res_C.x)
 
-    A3, B3, C3 = optimizer.extract_decision_variables(res.x)
+
+    # A3, B3, C3 = optimizer.extract_decision_variables(res.x)
     # A3 = res.x[0:n]
     # B3 = res.x[n:2*n]
     # C3 = res.x[2*n:3*n]
     # C3 = res.x[3*n:4*n]
 
-    print("A3", A3.reshape(1,-1))
-    print("B3", B3.reshape(1,-1))
-    print("C3", C3.reshape(1,-1))
+    # print("A3", A3.reshape(1,-1))
+    # print("B3", B3.reshape(1,-1))
+    # print("C3", C3.reshape(1,-1))
+    A3 = res_A.x
+    B3 = res_B.x
+    C3 = res_C.x
 
     A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = optimizer.unwind_coefficients(A3, B3, C3)
   
@@ -544,6 +628,18 @@ def main():
     ax1.set_xlabel("x")
     ax1.set_ylabel("y")
 
+    ax0 = plt.figure().add_subplot(projection='3d')
+    ax0.scatter(A0_plus, B0_plus, C0_plus)
+    ax0.scatter(wx, wy, wz)
+    
+    ax2 = plt.figure().add_subplot(projection='3d')
+    ax2.plot(x_array,y_array,z_array)
+    ax2.scatter(wx, wy, wz)
+
+    ax2.set_xlabel("x")
+    ax2.set_ylabel("y")
+    ax2.set_zlabel("z")
+    
 
     # ax.set_xlabel("x")
     # ax.set_ylabel("y")

@@ -28,39 +28,75 @@ class CasadiSolver:
         total_duration = np.sum(durations)
         fractions = durations / total_duration
 
-        x_error = position_error_1d(self.A3, waypoints[:,0], fractions)
+        x_error = position_error_1d(self.A3, waypoints[:,0], self.frac * self.total_duration)
 
-        y_error = position_error_1d(self.B3, waypoints[:,1], fractions)
+        y_error = position_error_1d(self.B3, waypoints[:,1], self.frac * self.total_duration)
 
-        z_error = position_error_1d(self.C3, waypoints[:,2], fractions)
+        z_error = position_error_1d(self.C3, waypoints[:,2], self.frac * self.total_duration)
 
         cost = ca.sum(x_error **2) + ca.sum(y_error**2) + ca.sum(z_error**2)
 
         # jerk_integral = 36 * ca.sum(self.A3**2 * self.times)
 
 
-        opt_variables = ca.vertcat(ca.reshape(self.A3, -1, 1), ca.reshape(self.B3, -1, 1), ca.reshape(self.C3, -1, 1))
+        opt_variables = ca.vertcat(
+            self.total_duration,
+            ca.reshape(self.frac, -1, 1), 
+            ca.reshape(self.A3, -1, 1), 
+            ca.reshape(self.B3, -1, 1), 
+            ca.reshape(self.C3, -1, 1))
 
         g = []
+        g.append(self.total_duration)
+        g.append(ca.sum(fractions) - 1)
+
+        g.append(self.frac)
         g.append(self.A3)
         g.append(self.B3)
         g.append(self.C3)
 
-        # lb = np.zeros(4 * N + 1)
-        # # total time lb
-        # lb[0] = 20
-        # # fraction lower bound
-        # lb[1:N+1] = 0
-        # # A3 lower bound
-        # lb[N+1:2*N+1] = -self.max_jerk_xy 
-        # # B3 lower bound
-        # lb[2*N+1:3*N+1] = -self.max_jerk_xy
-        # # C3 lower bound
-        # lb[2*N+1:3*N+1] = -self.max_jerk_xz
+        frac_start = 2
+        frac_end = frac_start + N
+        a3_start = frac_end
+        a3_end = a3_start + N
+        b3_start = a3_end
+        b3_end = b3_start + N
+        c3_start = b3_end
+        c3_end = c3_start + N 
+
+        lb = np.zeros(4 * N + 1)
+        # total time lb
+        lb[0] = 20
+        # fraction equality constraint
+        lb[1] = 0
+
+        # fraction lower bound
+        ub[frac_start:frac_end] = 0
+        # A3 lower bound
+        ub[a3_start:a3_end] = -self.max_jerk_xy 
+        # B3 lower bound
+        ub[b3_start:b3_end] = -self.max_jerk_xy
+        # C3 lower bound
+        ub[c3_start:c3_end] = -self.max_jerk_z
 
 
-        self.lbg = -self.max_jerk_xy
-        self.ubg = self.max_jerk_xy
+        ub = np.zeros(4 * N + 1)
+        # total time lb
+        ub[0] = total_duration
+        # fraction equality constraint
+        ub[1] = 0
+ 
+        # fraction upper bound
+        ub[frac_start:frac_end] = 1
+        # A3 lower bound
+        ub[a3_start:a3_end] = self.max_jerk_xy 
+        # B3 lower bound
+        ub[b3_start:b3_end] = self.max_jerk_xy
+        # C3 lower bound
+        ub[c3_start:c3_end] = self.max_jerk_z
+
+        self.lbg = lb
+        self.ubg = ub
 
         opt_constraints = ca.vertcat(*g)
 
@@ -83,18 +119,21 @@ class CasadiSolver:
     
     def solve_coefficients(self,initial_guess):
         solution = self.solver(x0 = initial_guess, lbg=self.lbg, ubg=self.ubg)
-        coeffs = solution['x'].reshape((-1,3))
+        X = solution['x']
+        t_total = X[0]
 
-        A3 = coeffs[:,0]
-        B3 = coeffs[:,1]
-        C3 = coeffs[:,2]
+        coeffs = X[1:].reshape(-1,4)
 
-        return A3, B3, C3, solution
+        fracs = coeffs[:,0]
+        A3 = coeffs[:,1]
+        B3 = coeffs[:,2]
+        C3 = coeffs[:,3]
+
+        return t_total, fracs, A3, B3, C3, solution
 
 
 
-def position_error_1d(X,waypoints, times):
-    P3 = X
+def position_error_1d(P3,waypoints, times):
 
     n = waypoints.shape[0] - 1
 
@@ -206,26 +245,50 @@ def main():
     print("fractions=", fractions)
 
 
-    solver = CasadiSolver(waypoints,fractions)
+    solver = CasadiSolver(waypoints,durations)
 
-    X0 = np.zeros(n*3)
-    A3, B3, C3, solution = solver.solve_coefficients(X0)
+
+    frac_start = 1
+    frac_end = frac_start + n
+    a3_start = frac_end
+    a3_end = a3_start + n
+    b3_start = a3_end
+    b3_end = b3_start + n
+    c3_start = b3_end
+    c3_end = c3_start + n 
+
+    X0 = np.zeros(4 * n + 1)
+    X0[0] = max_time
+    # fractions
+    X0[frac_start:frac_end] = fractions
+    # A3 lower bound
+    X0[a3_start:a3_end] = 0 
+    # B3 lower bound
+    X0[b3_start:b3_end] = 0
+    # C3 lower bound
+    X0[c3_start:c3_end] = 0
+
+
+    
+    t_total, fracs, A3, B3, C3, solution = solver.solve_coefficients(X0)
 
 
     print("solution", solution)
+    print("t_total", t_total)
+    print("fracs", fracs)
     print("A3", A3)
     print("B3", B3)
     print("C3", C3)
 
-
+    durations_star = fracs * t_total
 
     wx = waypoints[:,0]
     wy = waypoints[:,1]
     wz = waypoints[:,2]
 
-    A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = unwind_coefficients(A3, B3, C3, fractions, waypoints)
+    A0, A1, A2, A3, B0, B1, B2, B3, C0, C1, C2, C3 = unwind_coefficients(A3, B3, C3, durations_star, waypoints)
 
-    tn = fractions[n-1]
+    tn = durations_star[n-1]
     xn = A0[n-1] + A1[n-1] * tn + A2[n-1] * tn**2 + A3[n-1] * tn**3
     yn = B0[n-1] + B1[n-1] * tn + B2[n-1] * tn**2 + B3[n-1] * tn**3
     zn = C0[n-1] + C1[n-1] * tn + C2[n-1] * tn**2 + C3[n-1] * tn**3

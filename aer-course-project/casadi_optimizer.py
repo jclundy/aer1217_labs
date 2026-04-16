@@ -9,14 +9,14 @@ class CasadiSolver:
     def __init__(self, waypoints,durations):
         self.durations = durations
         self.waypoints = waypoints
-        self.max_duration = 60
         N = waypoints.shape[0] - 1
         self.N = N
         self.A3 = ca.SX.sym('A3', N)
         self.B3 = ca.SX.sym('B3', N)
         self.C3 = ca.SX.sym('C3', N)
 
-        self.durations = ca.SX.sym('t_i', N)
+        self.frac = ca.SX.sym('t_frac', N)
+        self.total_duration = ca.SX.sym('T')
 
         self.max_accel_xy = 5
         self.max_accel_z = 0.517
@@ -27,46 +27,58 @@ class CasadiSolver:
         self.max_jerk_xy = 2 * self.max_accel_xy / self.dt
         self.max_jerk_z = 2 * self.max_accel_z / self.dt
 
-        x_error = position_error_1d(self.A3, waypoints[:,0], self.durations)
+        max_duration = np.sum(durations)
+        fractions = durations / max_duration
 
-        y_error = position_error_1d(self.B3, waypoints[:,1], self.durations)
+        computed_times = self.frac * self.total_duration
+        x_error = position_error_1d(self.A3, waypoints[:,0], self.frac * self.total_duration)
 
-        z_error = position_error_1d(self.C3, waypoints[:,2], self.durations)
+        y_error = position_error_1d(self.B3, waypoints[:,1], self.frac * self.total_duration)
+
+        z_error = position_error_1d(self.C3, waypoints[:,2], self.frac * self.total_duration)
 
         error_cost = ca.sum(x_error **2) + ca.sum(y_error**2) + ca.sum(z_error**2)
-        jerk_integral = 36 * ca.sum(self.A3**2 * self.durations) + ca.sum(self.B3**2 * self.durations) + ca.sum(self.C3**2 * self.durations)
+        jerk_integral = 36 * ca.sum(self.A3**2 * computed_times) + ca.sum(self.B3**2 * computed_times) + ca.sum(self.C3**2 * computed_times)
 
         a1 = 2
         a2 = 1
         a3 = 1
-        # cost = a1 * error_cost + a2 * jerk_integral #+ a3* ca.sum(self.durations)
-        cost = error_cost
+        cost = a1 * error_cost + a2 * jerk_integral + a3* ca.sum(computed_times)
+
 
         opt_variables = ca.vertcat(
-            ca.reshape(self.durations, -1, 1), 
+            self.total_duration,
+            ca.reshape(self.frac, -1, 1), 
             ca.reshape(self.A3, -1, 1), 
             ca.reshape(self.B3, -1, 1), 
             ca.reshape(self.C3, -1, 1))
 
         g = []
-        g.append(self.durations)
+        g.append(self.total_duration)
+        g.append(ca.sum(fractions) - 1)
+
+        g.append(self.frac)
         g.append(self.A3)
         g.append(self.B3)
         g.append(self.C3)
 
-        duration_start = 0
-        duration_end = duration_start + N
-        a3_start = duration_end
+        frac_start = 2
+        frac_end = frac_start + N
+        a3_start = frac_end
         a3_end = a3_start + N
         b3_start = a3_end
         b3_end = b3_start + N
         c3_start = b3_end
         c3_end = c3_start + N 
 
-        lb = np.zeros(4 * N)
+        lb = np.zeros(4 * N + 2)
+        # total time lb
+        lb[0] = self.min_time
+        # fraction equality constraint
+        lb[1] = 0
 
         # fraction lower bound
-        lb[duration_start:duration_end] = self.dt
+        lb[frac_start:frac_end] = 0
         # A3 lower bound
         lb[a3_start:a3_end] = -self.max_jerk_xy 
         # B3 lower bound
@@ -75,10 +87,14 @@ class CasadiSolver:
         lb[c3_start:c3_end] = -self.max_jerk_z
 
 
-        ub = np.zeros(4 * N)
+        ub = np.zeros(4 * N + 2)
+        # total time lb
+        ub[0] = max_duration
+        # fraction equality constraint
+        ub[1] = 0
  
         # fraction upper bound
-        ub[duration_start:duration_end] =  self.max_duration
+        ub[frac_start:frac_end] = 1
         # A3 lower bound
         ub[a3_start:a3_end] = self.max_jerk_xy 
         # B3 lower bound
@@ -111,18 +127,16 @@ class CasadiSolver:
     def solve_coefficients(self,initial_guess):
         solution = self.solver(x0 = initial_guess, lbg=self.lbg, ubg=self.ubg)
         X = solution['x']
+        t_total = X[0]
 
-        coeffs = X.reshape((-1,4))
+        coeffs = X[1:].reshape((-1,4))
 
-        durations = coeffs[:,0]
+        fracs = coeffs[:,0]
         A3 = coeffs[:,1]
         B3 = coeffs[:,2]
         C3 = coeffs[:,3]
 
-        t_total = np.sum(durations)
-
-
-        return t_total, durations, A3, B3, C3, solution
+        return t_total, fracs, A3, B3, C3, solution
 
 
 
@@ -278,14 +292,14 @@ def main():
     print("waypoint_min_lengths=",waypoint_min_lengths.reshape(1,-1))
 
     total_length = np.sum(waypoint_min_lengths)
-    initial_durations = waypoint_min_lengths / total_length * max_time
+    durations = waypoint_min_lengths / total_length * max_time
 
-    fractions = initial_durations / max_time
+    fractions = durations / max_time
 
     print("fractions=", fractions)
 
 
-    solver = CasadiSolver(waypoints,initial_durations)
+    solver = CasadiSolver(waypoints,durations)
 
 
     frac_start = 1
@@ -297,9 +311,10 @@ def main():
     c3_start = b3_end
     c3_end = c3_start + n 
 
-    X0 = np.zeros(4 * n)
-    # durations
-    X0[frac_start:frac_end] = initial_durations
+    X0 = np.zeros(4 * n + 1)
+    X0[0] = max_time
+    # fractions
+    X0[frac_start:frac_end] = fractions
     # A3 lower bound
     X0[a3_start:a3_end] = 0 
     # B3 lower bound
@@ -309,17 +324,17 @@ def main():
 
 
     
-    t_total, durations_star, A3, B3, C3, solution = solver.solve_coefficients(X0)
+    t_total, fracs, A3, B3, C3, solution = solver.solve_coefficients(X0)
 
 
     print("solution", solution)
     print("t_total", t_total)
-    print("durations", durations_star)
+    print("fracs", fracs)
     print("A3", A3)
     print("B3", B3)
     print("C3", C3)
 
-    # durations_star = (fracs * t_total).reshape((-1,1))
+    durations_star = (fracs * t_total).reshape((-1,1))
 
     wx = waypoints[:,0]
     wy = waypoints[:,1]

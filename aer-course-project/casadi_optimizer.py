@@ -42,7 +42,8 @@ class CasadiSolver:
 
         a1 = 2
         a2 = 1
-        cost = a1 * error_cost + a2 * jerk_integral
+        a3 = 1
+        cost = a1 * error_cost + a2 * jerk_integral + a3* ca.sum(computed_times)
 
 
         opt_variables = ca.vertcat(
@@ -177,12 +178,23 @@ def position_error_1d(P3,waypoints, times):
     return eqn_p1
 
 def generate_waypoints():
-    poses = []
+    # poses = [[-1.0, -3.0, 1.0], 
+    #         [-0.09999980975910072, -2.49952220397356, 1.0], 
+    #         [0.5, -2.5, 1.0], 
+    #         [2.0, -2.1, 1.0], 
+    #         [2.0, -1.5, 1.0], 
+    #         [1.2999999048795503, -0.64976110198678, 1.0], 
+    #         [0.5999998097591007, 0.20047779602643997, 1.0], 
+    #         [0.0, 0.2, 1.0], 
+    #         [-0.5, 0.9, 1.0], 
+    #         [-0.5, 1.5, 1.0], 
+    #         [-0.5, 2.0, 1.0]]
 
     poses = [[-1.0, -3.0, 1.0], 
             [-0.09999980975910072, -2.49952220397356, 1.0], 
             [0.5, -2.5, 1.0], 
             [2.0, -2.1, 1.0]]
+
     return np.array(poses).reshape(-1,3)
 
 def unwind_coefficients(A3, B3, C3, times, waypoints):

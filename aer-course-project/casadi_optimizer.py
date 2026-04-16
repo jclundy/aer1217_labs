@@ -25,8 +25,8 @@ class CasadiSolver:
         self.max_jerk_xy = 2 * self.max_accel_xy / self.dt
         self.max_jerk_z = 2 * self.max_accel_z / self.dt
 
-        total_duration = np.sum(durations)
-        fractions = durations / total_duration
+        max_duration = np.sum(durations)
+        fractions = durations / max_duration
 
         x_error = position_error_1d(self.A3, waypoints[:,0], self.frac * self.total_duration)
 
@@ -34,7 +34,7 @@ class CasadiSolver:
 
         z_error = position_error_1d(self.C3, waypoints[:,2], self.frac * self.total_duration)
 
-        cost = ca.sum(x_error **2) + ca.sum(y_error**2) + ca.sum(z_error**2)
+        cost = ca.sum(x_error **2) + ca.sum(y_error**2) + ca.sum(z_error**2) + self.total_duration
 
         # jerk_integral = 36 * ca.sum(self.A3**2 * self.times)
 
@@ -82,7 +82,7 @@ class CasadiSolver:
 
         ub = np.zeros(4 * N + 2)
         # total time lb
-        ub[0] = total_duration
+        ub[0] = max_duration
         # fraction equality constraint
         ub[1] = 0
  

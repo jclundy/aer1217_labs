@@ -6,13 +6,17 @@ import matplotlib.pyplot as plt
 class SegmentCasadiSolver:
     def __init__(self, waypoints,waypoint_desired_velocities, waypoint_start_times, dt=1/60.0):
         self.waypoints = waypoints
-        self.numWaypoints = waypoints.shape[0]
+        self.Nw = waypoints.shape[0]
         total_time = waypoint_start_times[-1]
         self.total_time = total_time
         self.dt = dt
 
         # Number of decsion variables is total time / dt
         N = np.floor(total_time / self.dt).astype(np.int64)
+
+        print("total_time=",total_time)
+        print("self.dt=",self.dt)
+        print("N=",N)
         # discretized times
         self.dts = np.ones((N,1)) * dt
         last_dt = total_time - (N-1)*dt
@@ -48,7 +52,7 @@ class SegmentCasadiSolver:
         g.append(self.B4)
         g.append(self.C4)
 
-        for i in range(0,self.numWaypoints):
+        for i in range(0,self.Nw):
             index = np.floor(waypoint_start_times[i] / total_time * (N-1)).astype(np.int64) 
             waypoint_discretized_indices.append(index)
             waypoint_dt = waypoint_start_times[i] - index * dt
@@ -97,6 +101,10 @@ class SegmentCasadiSolver:
             ca.reshape(self.B4, -1, 1), 
             ca.reshape(self.C4, -1, 1))
 
+        opt_constraints = ca.vertcat(*g)
+
+        print("opt_constraints.shape", opt_constraints.shape)
+
         a3_start = 0
         a3_end = a3_start + N
         b3_start = a3_end
@@ -105,7 +113,9 @@ class SegmentCasadiSolver:
         c3_end = c3_start + N 
 
         # number of constraints = num decision variables + num position constraints + num velocity constraints = 4 * N + 3*N + 3*N
-        num_constraints = 4 * N + 3*N + 3*N
+        num_constraints = 3 * N + 3*self.Nw + 3*self.Nw
+
+        print("num_constraints=", num_constraints)
         lb = np.zeros(num_constraints)
 
         # A3 lower bound
@@ -129,8 +139,6 @@ class SegmentCasadiSolver:
 
         self.lbg = lb
         self.ubg = ub
-
-        opt_constraints = ca.vertcat(*g)
 
         # p - equality constraints
         nlp_prob = {'f': cost, 'x': opt_variables, 'g': opt_constraints}
@@ -272,11 +280,10 @@ def main():
     print("waypoints=", waypoints.reshape(-1,3))
 
 
-
+    Nw = waypoints.shape[0]
     max_time = 12
-    n = waypoints.shape[0]-1
 
-    p_prev = waypoints[0:n,:]
+    p_prev = waypoints[0:Nw-1,:]
     p_next = waypoints[1:,:]
     waypoint_min_lengths = np.linalg.norm(p_next - p_prev, axis=1)
 
@@ -285,27 +292,28 @@ def main():
     total_length = np.sum(waypoint_min_lengths)
     durations = waypoint_min_lengths / total_length * max_time
 
-    dt = 1/60.0
+    dt = 1/5.0
 
     waypoint_desired_velocities = np.zeros(waypoints.shape)
-    waypoint_desired_velocities[1:n-2,:] = np.inf
-    waypoint_start_times = np.zeros((n+1,))
+    waypoint_desired_velocities[1:Nw-2,:] = np.inf
+    waypoint_start_times = np.zeros((Nw,))
     for i in range(0,durations.size):
         waypoint_start_times[i+1] = waypoint_start_times[i] + durations[i]
 
+    print("waypoint_start_times", waypoint_start_times)
     solver = SegmentCasadiSolver(waypoints,waypoint_desired_velocities, waypoint_start_times, dt)
 
-
-    frac_start = 1
-    frac_end = frac_start + n
-    a3_start = frac_end
+    n = solver.N
+    a3_start = 0
     a3_end = a3_start + n
     b3_start = a3_end
     b3_end = b3_start + n
     c3_start = b3_end
     c3_end = c3_start + n 
 
-    X0 = np.zeros(4 * n + 1)
+    num_decision_variables = 3 * n
+
+    X0 = np.zeros((num_decision_variables,))
     X0[a3_start:a3_end] = 0 
     # B3 lower bound
     X0[b3_start:b3_end] = 0
@@ -329,11 +337,11 @@ def main():
     wy = waypoints[:,1]
     wz = waypoints[:,2]
 
-    A0, A1, A2, A3, A4 = unroll_coefficients(A4,waypoints[0,0],dts)
-    B0, B1, B2, B3, B4 = unroll_coefficients(B4,waypoints[0,1],dts)
-    C0, C1, C2, C3, C4 = unroll_coefficients(C4,waypoints[0,2],dts)
+    A0, A1, A2, A3, A4 = unroll_coefficients(A4,waypoints[0,0],solver.dts)
+    B0, B1, B2, B3, B4 = unroll_coefficients(B4,waypoints[0,1],solver.dts)
+    C0, C1, C2, C3, C4 = unroll_coefficients(C4,waypoints[0,2],solver.dts)
 
-    tn = durations_star[n-1]
+    tn = solver.dts[n-1]
     xn = A0[n-1] + A1[n-1] * tn + A2[n-1] * tn**2 + A3[n-1] * tn**3 + A4[n-1] * tn**4
     yn = B0[n-1] + B1[n-1] * tn + B2[n-1] * tn**2 + B3[n-1] * tn**3 + B4[n-1] * tn**4
     zn = C0[n-1] + C1[n-1] * tn + C2[n-1] * tn**2 + C3[n-1] * tn**3 + C4[n-1] * tn**4

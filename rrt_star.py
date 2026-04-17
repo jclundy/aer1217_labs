@@ -25,7 +25,7 @@ Z_BOUNDS = (BOUNDS[2, 0], BOUNDS[2, 1])
 PADDING = 0.5 #for sample selection
 
 ##eg gate order
-# GATE_ORDER = [1,3,4,2,1,4]
+GATE_ORDER = [1,3,4,2,1,4]
 ##RRT Variables
 ITERATION = 300
 REWIRE = 0.6
@@ -312,7 +312,9 @@ def path(GATE_ORDER):
         else:
             ##get segment
             seg = plan(seg_start, seg_goal, tgt_gate)
-            full_path.extend(seg[1:])
+            if full_path:
+                seg = seg[1:] 
+            full_path.extend(seg)
         
         ##get segment
         # seg = plan(seg_start, seg_goal, tgt_gate)
@@ -387,7 +389,7 @@ def plot_path(full_path, key_waypoints):
     plt.show()
 
 if __name__ =="__main__":
-    gates = [1,2,3,4,2,3]
+    gates = [1,3,4,2,1,4]
     path, key_waypoints = path(gates)
     print("Key waypoints (gates + start/goal):")
     for i, pt in enumerate(key_waypoints):
@@ -398,6 +400,6 @@ if __name__ =="__main__":
         print(f"  {i:3d}: {np.round(pt, 3)}")
 
     ##plot path
-    # plot_path(path, key_waypoints)
+    plot_path(path, key_waypoints)
 
 

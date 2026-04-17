@@ -140,30 +140,15 @@ class SegmentCasadiSolver:
     def solve_coefficients(self,initial_guess):
         solution = self.solver(x0 = initial_guess, lbg=self.lbg, ubg=self.ubg)
         X = solution['x']
-        t_total = X[0]
 
-        coeffs = X[1:].reshape((-1,4))
-
-        fracs = coeffs[:,0]
-        A3 = coeffs[:,1]
-        B3 = coeffs[:,2]
-        C3 = coeffs[:,3]
-
-        return t_total, fracs, A3, B3, C3, solution
-    
-    def solve_coefficients(self,initial_guess):
-        solution = self.solver(x0 = initial_guess, lbg=self.lbg, ubg=self.ubg)
-        X = solution['x']
-        t_total = X[0]
-
-        coeffs = X[1:].reshape((-1,4))
+        coeffs = X.reshape((-1,4))
 
         fracs = coeffs[:,0]
-        A3 = coeffs[:,1]
-        B3 = coeffs[:,2]
-        C3 = coeffs[:,3]
+        A4 = coeffs[:,1]
+        B4 = coeffs[:,2]
+        C4 = coeffs[:,3]
 
-        return t_total, fracs, A3, B3, C3, solution
+        return A4, B4, C4, solution
     
 
 def compute_state_1d(P0, P1, P2, P3, P4, dt):
@@ -230,3 +215,149 @@ def integrate_1d(P4,WP0, times):
     pdd = 2 * P2 + 6 * P3 * times + 12 * P4 * times**2
 
     return p, pd, pdd
+
+
+def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A3, A4, B0, B1, B2, B3,B4, C0, C1, C2, C3, C4):
+    x_vals = np.array([])
+    y_vals = np.array([])
+    z_vals = np.array([])
+    t_vals = np.array([])
+
+    x_vals = A0 + A1 * dt + A2 * dt**2 + A3 * dt**3 + A4 * dt**4
+    y_vals = B0 + B1 * dt + B2 * dt**2 + B3 * dt**3 + B4 * dt**4
+    t_vals = C0 + C1 * dt + C2 * dt**2 + C3 * dt**3 + C4 * dt**4
+
+    t_array = t_vals.flatten()
+    x_array = np.array(x_vals).flatten()
+    y_array = np.array(y_vals).flatten()
+    z_array = np.array(z_vals).flatten()
+
+    return t_array, x_array, y_array, z_array
+
+
+def generate_waypoints():
+    # poses = [[-1.0, -3.0, 1.0], 
+    #         [-0.09999980975910072, -2.49952220397356, 1.0], 
+    #         [0.5, -2.5, 1.0], 
+    #         [2.0, -2.1, 1.0], 
+    #         [2.0, -1.5, 1.0], 
+    #         [1.2999999048795503, -0.64976110198678, 1.0], 
+    #         [0.5999998097591007, 0.20047779602643997, 1.0], 
+    #         [0.0, 0.2, 1.0], 
+    #         [-0.5, 0.9, 1.0], 
+    #         [-0.5, 1.5, 1.0], 
+    #         [-0.5, 2.0, 1.0]]
+
+    poses = [[-1.0, -3.0, 1.0], 
+            [-0.09999980975910072, -2.49952220397356, 1.0], 
+            [0.5, -2.5, 1.0], 
+            [2.0, -2.1, 1.0]]
+
+    return np.array(poses).reshape(-1,3)
+
+def main():
+    waypoints = generate_waypoints()
+    print("waypoints=", waypoints.reshape(-1,3))
+
+
+
+    max_time = 12
+    n = waypoints.shape[0]-1
+
+    p_prev = waypoints[0:n,:]
+    p_next = waypoints[1:,:]
+    waypoint_min_lengths = np.linalg.norm(p_next - p_prev, axis=1)
+
+    print("waypoint_min_lengths=",waypoint_min_lengths.reshape(1,-1))
+
+    total_length = np.sum(waypoint_min_lengths)
+    durations = waypoint_min_lengths / total_length * max_time
+
+    dt = 1/60.0
+
+    waypoint_desired_velocities = np.zeros(waypoints.shape)
+    waypoint_desired_velocities[1:n-2,:] = np.inf
+    waypoint_start_times = np.zeros((n,1))
+    waypoint_start_times[1:] = durations
+
+    solver = SegmentCasadiSolver(waypoints,waypoint_desired_velocities, waypoint_start_times, dt)
+
+
+    frac_start = 1
+    frac_end = frac_start + n
+    a3_start = frac_end
+    a3_end = a3_start + n
+    b3_start = a3_end
+    b3_end = b3_start + n
+    c3_start = b3_end
+    c3_end = c3_start + n 
+
+    X0 = np.zeros(4 * n + 1)
+    X0[0] = max_time
+    # fractions
+    X0[frac_start:frac_end] = fractions
+    # A3 lower bound
+    X0[a3_start:a3_end] = 0 
+    # B3 lower bound
+    X0[b3_start:b3_end] = 0
+    # C3 lower bound
+    X0[c3_start:c3_end] = 0
+
+
+    
+    t_total, fracs, A4, B4, C4, solution = solver.solve_coefficients(X0)
+
+
+    print("solution", solution)
+    print("t_total", t_total)
+    print("fracs", fracs)
+    print("A4", A4)
+    print("B4", B4)
+    print("C4", C4)
+
+    durations_star = (fracs / np.sum(fracs) * t_total).reshape((-1,1))
+
+    wx = waypoints[:,0]
+    wy = waypoints[:,1]
+    wz = waypoints[:,2]
+
+    A0, A1, A2, A3, A4, B0, B1, B2, B3, B4, C0, C1, C2, C3, C4 = unwind_coefficients(A4, B4, C4, durations_star, waypoints)
+
+    tn = durations_star[n-1]
+    xn = A0[n-1] + A1[n-1] * tn + A2[n-1] * tn**2 + A3[n-1] * tn**3 + A4[n-1] * tn**4
+    yn = B0[n-1] + B1[n-1] * tn + B2[n-1] * tn**2 + B3[n-1] * tn**3 + B4[n-1] * tn**4
+    zn = C0[n-1] + C1[n-1] * tn + C2[n-1] * tn**2 + C3[n-1] * tn**3 + C4[n-1] * tn**4
+
+    print("A0.shape",A0.shape)
+    print("xn.shape",np.array([xn]).shape)
+
+    print("durations_star.shape",durations_star.shape)
+
+    A0_plus = np.concatenate([np.array(A0).flatten(), np.array([xn]).flatten()])
+    B0_plus = np.concatenate([np.array(B0).flatten(), np.array([yn]).flatten()])
+    C0_plus = np.concatenate([np.array(C0).flatten(), np.array([zn]).flatten()])
+
+    print("A0_plus", A0_plus)
+    print("B0_plus", B0_plus)
+    print("C0_plus", C0_plus)
+    print("waypoints=", waypoints.reshape(-1,3))
+
+    ax0 = plt.figure().add_subplot(projection='3d')
+    ax0.scatter(A0_plus, B0_plus, C0_plus, marker='^')
+    ax0.scatter(wx, wy, wz, marker='o')
+
+    # plot trajectory of quadrotor evalutaed at every timestep
+    ctrl_freq = 60.0
+    dt = 1/ctrl_freq
+    t_array, x_array, y_array, z_array = evalute_polynomials_over_control_time_step(durations_star, dt, n, ctrl_freq, A0, A1, A2, A3, A4, B0, B1, B2, B3, B4, C0, C1, C2, C3, C4)
+
+    ax0.plot(x_array,y_array,z_array)
+    ax0.set_xlabel("x")
+    ax0.set_ylabel("y")
+    ax0.set_zlabel("z")
+
+    plt.show()
+
+
+if __name__ == "__main__":
+    main()

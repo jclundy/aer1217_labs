@@ -87,14 +87,16 @@ class SegmentCasadiSolver:
             g.append(y_error)
             g.append(z_error)
             
-            # equality constraint for waypoint velocities
-            xd_error = 0 if waypoint_desired_velocities[i,0] == np.inf else wp_xd - waypoint_desired_velocities[i,0]
-            yd_error = 0 if waypoint_desired_velocities[i,1] == np.inf else wp_yd - waypoint_desired_velocities[i,1]
-            zd_error = 0 if waypoint_desired_velocities[i,2] == np.inf else wp_zd - waypoint_desired_velocities[i,2]
 
-            g.append(xd_error)
-            g.append(yd_error)
-            g.append(zd_error)
+            # equality constraint for waypoint velocities
+            if (i == 0 or i == self.Nw-1):
+                xd_error = wp_xd - waypoint_desired_velocities[i,0]
+                yd_error = wp_yd - waypoint_desired_velocities[i,1]
+                zd_error = wp_zd - waypoint_desired_velocities[i,2]
+
+                g.append(xd_error)
+                g.append(yd_error)
+                g.append(zd_error)
 
         opt_variables = ca.vertcat(
             ca.reshape(self.A4, -1, 1), 
@@ -113,7 +115,7 @@ class SegmentCasadiSolver:
         c3_end = c3_start + N 
 
         # number of constraints = num decision variables + num position constraints + num velocity constraints = 4 * N + 3*N + 3*N
-        num_constraints = 3 * N + 3*self.Nw + 3*self.Nw
+        num_constraints = 3 * N + 3*self.Nw + 3*2
 
         print("num_constraints=", num_constraints)
         lb = np.zeros(num_constraints)
@@ -298,7 +300,7 @@ def main():
     total_length = np.sum(waypoint_min_lengths)
     durations = waypoint_min_lengths / total_length * max_time
 
-    dt = 1/5.0
+    dt = 1/20.0
 
     waypoint_desired_velocities = np.zeros(waypoints.shape)
     waypoint_desired_velocities[1:Nw-2,:] = np.inf
@@ -367,15 +369,14 @@ def main():
     print("waypoints=", waypoints.reshape(-1,3))
 
     ax0 = plt.figure().add_subplot(projection='3d')
-    ax0.scatter(A0_plus, B0_plus, C0_plus, marker='^')
+    ax0.plot(A0_plus, B0_plus, C0_plus)
     ax0.scatter(wx, wy, wz, marker='o')
 
     # plot trajectory of quadrotor evalutaed at every timestep
-    ctrl_freq = 60.0
-    dt = 1/ctrl_freq
-    x_array, y_array, z_array = evalute_polynomials_over_control_time_step(dt,A0, A1, A2, A3, A4, B0, B1, B2, B3,B4, C0, C1, C2, C3, C4)
 
-    ax0.plot(x_array,y_array,z_array)
+    # x_array, y_array, z_array = evalute_polynomials_over_control_time_step(1/60.0,A0, A1, A2, A3, A4, B0, B1, B2, B3,B4, C0, C1, C2, C3, C4)
+
+    # ax0.plot(x_array,y_array,z_array)
     ax0.set_xlabel("x")
     ax0.set_ylabel("y")
     ax0.set_zlabel("z")

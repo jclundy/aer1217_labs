@@ -42,11 +42,11 @@ class CasadiSolver:
         # test_error = position_error_1d([1e-4, 1e-4, 1e-4], waypoints[:,0], durations)
 
         error_cost = ca.sum(x_error **2) + ca.sum(y_error**2) + ca.sum(z_error**2)
-        jerk_integral = 36 * ca.sum(self.A4**2 * computed_times) + ca.sum(self.B4**2 * computed_times) + ca.sum(self.C4**2 * computed_times)
+        jerk_integral = 24**2 * ca.sum((self.A4 * computed_times)**2) + 24**2 *ca.sum((self.B4 * computed_times)**2) + 24**2 * ca.sum((self.C4 * computed_times)**2)
 
-        a1 = 0
-        a2 = 0
-        a3 = 5
+        a1 = 1
+        a2 = 1
+        a3 = 0
         # cost = a1 * error_cost + a2 * jerk_integral + a3* ca.sum(computed_times)
         cost = a1 * error_cost + a2 * jerk_integral + a3* ca.sum(computed_times)**2
 
@@ -180,6 +180,8 @@ def unroll_coefficients(P4, waypoints, times):
 
     # DDDX = 6 * A3 + 24 * A4  * t
     ###  6 A3_1 = 6*A3_0 + 24 A4 * t => A3_1 = A3_0
+
+    #D4X = 24 * A4
     P3 = 4 * ca.mtimes(M, P4) * times
 
     # P2 = 3 * M @ (P3 * times)
@@ -336,7 +338,7 @@ def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A
         # t_vals = np.concatenate([t_vals, ti_total.flatten()])
         x_vals = np.concatenate([x_vals, xi])
         y_vals = np.concatenate([y_vals, yi])
-        z_vals = np.concatenate([z_vals, zi])
+        z_vals = np.concatenate([z_vals, np.array(zi).flatten()])
         prev_duration = duration
 
     t_array = t_vals.flatten()

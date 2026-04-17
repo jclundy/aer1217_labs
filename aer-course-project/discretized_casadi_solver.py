@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 class SegmentCasadiSolver:
     def __init__(self, waypoints,waypoint_desired_velocities, waypoint_start_times, dt=1/60.0):
         self.waypoints = waypoints
-        self.numWaypoints = waypoints.shape([0])
+        self.numWaypoints = waypoints.shape[0]
         total_time = waypoint_start_times[-1]
         self.total_time = total_time
         self.dt = dt
@@ -19,9 +19,9 @@ class SegmentCasadiSolver:
         self.dts[N-1] = last_dt
 
         self.N = N
-        self.A3 = ca.SX.sym('A3', N)
-        self.B3 = ca.SX.sym('B3', N)
-        self.C3 = ca.SX.sym('C3', N)
+        self.A4 = ca.SX.sym('A4', N)
+        self.B4 = ca.SX.sym('B4', N)
+        self.C4 = ca.SX.sym('C4', N)
 
         self.max_accel_xy = 5
         self.max_accel_z = 0.517
@@ -49,17 +49,29 @@ class SegmentCasadiSolver:
         g.append(self.C4)
 
         for i in range(0,self.numWaypoints):
-            index = np.floor(waypoint_start_times[i] / total_time * N).astype(np.int64) 
+            index = np.floor(waypoint_start_times[i] / total_time * (N-1)).astype(np.int64) 
             waypoint_discretized_indices.append(index)
             waypoint_dt = waypoint_start_times[i] - index * dt
             waypoint_time_delta.append(waypoint_dt)
 
-            A0_i = A0[index], A1_i = A1[index], A2_i = A2[index], A3_i = A3[index], A4_i = A4[index]
-            B0_i = B0[index], B1_i = B1[index], B2_i = B2[index], B3_i = B3[index], B4_i = B4[index]
-            C0_i = C0[index], C1_i = C1[index], C2_i = C2[index], C3_i = C3[index], C4_i = C4[index]
-            wp_x, wp_xd, wp_xdd = compute_state_1d(A0_i,A1_i,A2_i,A3_i,A3_i, waypoint_dt)
-            wp_y, wp_yd, wp_ydd = compute_state_1d(B0_i,B1_i,B2_i,B3_i,B3_i, waypoint_dt)
-            wp_z, wp_zd, wp_zdd = compute_state_1d(C0_i,C1_i,C2_i,C3_i,C3_i, waypoint_dt)
+            A0_i = A0[index]
+            A1_i = A1[index]
+            A2_i = A2[index]
+            A3_i = A3[index]
+            A4_i = A4[index]
+            B0_i = B0[index]
+            B1_i = B1[index]
+            B2_i = B2[index]
+            B3_i = B3[index]
+            B4_i = B4[index]
+            C0_i = C0[index]
+            C1_i = C1[index]
+            C2_i = C2[index]
+            C3_i = C3[index]
+            C4_i = C4[index]
+            wp_x, wp_xd, wp_xdd = compute_state_1d(A0_i,A1_i,A2_i,A3_i,A4_i, waypoint_dt)
+            wp_y, wp_yd, wp_ydd = compute_state_1d(B0_i,B1_i,B2_i,B3_i,B4_i, waypoint_dt)
+            wp_z, wp_zd, wp_zdd = compute_state_1d(C0_i,C1_i,C2_i,C3_i,C4_i, waypoint_dt)
             
             # equality constraint for waypoint positions
 
@@ -81,9 +93,9 @@ class SegmentCasadiSolver:
             g.append(zd_error)
 
         opt_variables = ca.vertcat(
-            ca.reshape(self.A3, -1, 1), 
-            ca.reshape(self.B3, -1, 1), 
-            ca.reshape(self.C3, -1, 1))
+            ca.reshape(self.A4, -1, 1), 
+            ca.reshape(self.B4, -1, 1), 
+            ca.reshape(self.C4, -1, 1))
 
         a3_start = 0
         a3_end = a3_start + N
@@ -165,7 +177,7 @@ def compute_state_1d(P0, P1, P2, P3, P4, dt):
 
 
 def unroll_coefficients(P4, WP0, times):
-    n = times.shape[0] - 1
+    n = times.size
 
     M = np.zeros((n,n))
     M[1:,:] = np.tril(np.ones((n-1,n)))
@@ -277,8 +289,9 @@ def main():
 
     waypoint_desired_velocities = np.zeros(waypoints.shape)
     waypoint_desired_velocities[1:n-2,:] = np.inf
-    waypoint_start_times = np.zeros((n,1))
-    waypoint_start_times[1:] = durations
+    waypoint_start_times = np.zeros((n+1,))
+    for i in range(0,durations.size):
+        waypoint_start_times[i+1] = waypoint_start_times[i] + durations[i]
 
     solver = SegmentCasadiSolver(waypoints,waypoint_desired_velocities, waypoint_start_times, dt)
 
@@ -293,16 +306,11 @@ def main():
     c3_end = c3_start + n 
 
     X0 = np.zeros(4 * n + 1)
-    X0[0] = max_time
-    # fractions
-    X0[frac_start:frac_end] = fractions
-    # A3 lower bound
     X0[a3_start:a3_end] = 0 
     # B3 lower bound
     X0[b3_start:b3_end] = 0
     # C3 lower bound
     X0[c3_start:c3_end] = 0
-
 
     
     t_total, fracs, A4, B4, C4, solution = solver.solve_coefficients(X0)
@@ -321,7 +329,9 @@ def main():
     wy = waypoints[:,1]
     wz = waypoints[:,2]
 
-    A0, A1, A2, A3, A4, B0, B1, B2, B3, B4, C0, C1, C2, C3, C4 = unwind_coefficients(A4, B4, C4, durations_star, waypoints)
+    A0, A1, A2, A3, A4 = unroll_coefficients(A4,waypoints[0,0],dts)
+    B0, B1, B2, B3, B4 = unroll_coefficients(B4,waypoints[0,1],dts)
+    C0, C1, C2, C3, C4 = unroll_coefficients(C4,waypoints[0,2],dts)
 
     tn = durations_star[n-1]
     xn = A0[n-1] + A1[n-1] * tn + A2[n-1] * tn**2 + A3[n-1] * tn**3 + A4[n-1] * tn**4

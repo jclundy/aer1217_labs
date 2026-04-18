@@ -66,47 +66,55 @@ class SegmentCasadiSolver:
         y, yd, ydd, yddd = compute_state_1d(B0,B1,B2,B3,B4, self.dts)
         z, zd, zdd, zddd = compute_state_1d(C0,C1,C2,C3,C4, self.dts)
 
+        # velocity and acceleration constraint
+        # g.append(ca.sqrt(xd**2 + yd**2 + zd**2))
+        # g.append(ca.sqrt(xdd**2 + ydd**2 + zdd**2))
+
+
         # Start point equality
-        x0_error = x[0] - A0
-        y0_error = y[0] - B0
-        z0_error = z[0] - C0
+        x0_error = x[0] - A0[0]
+        y0_error = y[0] - B0[0]
+        z0_error = z[0] - C0[0]
 
-        x0d_error = xd[0] - A1
-        y0d_error = yd[0] - B1
-        z0d_error = zd[0] - C1
+        x0d_error = xd[0] - A1[0]
+        y0d_error = yd[0] - B1[0]
+        z0d_error = zd[0] - C1[0]
 
-        x0dd_error = xdd[0] - 2*A2
-        z0dd_error = zdd[0] - 2*B2
-        y0dd_error = ydd[0] - 2*C2
+        x0dd_error = xdd[0] - 2*A2[0]
+        z0dd_error = zdd[0] - 2*B2[0]
+        y0dd_error = ydd[0] - 2*C2[0]
 
-        x0ddd_error = xddd[0] - 6*A3
-        y0ddd_error = yddd[0] - 6*A3
-        z0ddd_error = zddd[0] - 6*A3
+        x0ddd_error = xddd[0] - 6*A3[0]
+        y0ddd_error = yddd[0] - 6*A3[0]
+        z0ddd_error = zddd[0] - 6*A3[0]
 
         g.append(x0_error)
         g.append(y0_error)
         g.append(z0_error)
+        equality_constraints += 3
 
-        # inequality constraint for speed
-        g.append(x0d_error)
-        g.append(y0d_error)
-        g.append(z0d_error)
+        # # inequality constraint for speed
+        # g.append(x0d_error)
+        # g.append(y0d_error)
+        # g.append(z0d_error)
 
-        # inequality constraints for acceleration
-        g.append(x0dd_error)
-        g.append(y0dd_error)
-        g.append(z0dd_error)
+        # # inequality constraints for acceleration
+        # g.append(x0dd_error)
+        # g.append(y0dd_error)
+        # g.append(z0dd_error)
 
-        # inequality constraints for jerk
-        g.append(x0ddd_error)
-        g.append(y0ddd_error)
-        g.append(z0ddd_error)
-        equality_constraints += 12
+        # # inequality constraints for jerk
+        # g.append(x0ddd_error)
+        # g.append(y0ddd_error)
+        # g.append(z0ddd_error)
+        # equality_constraints += 12
 
         # End waypoint equality
         xN_error = x[-1] - waypoints[-1,0]
         yN_error = y[-1] - waypoints[-1,1]
         zN_error = z[-1] - waypoints[-1,2]
+
+        print("waypoints[-1,:]",waypoints[-1,:])
 
         xNd_error = xd[-1] - waypoint_derivatives[-1, 0,0]
         yNd_error = yd[-1] - waypoint_derivatives[-1, 0,1]
@@ -123,29 +131,31 @@ class SegmentCasadiSolver:
         g.append(xN_error)
         g.append(yN_error)
         g.append(zN_error)
+        equality_constraints += 3
 
-        # inequality constraint for speed
-        g.append(xNd_error)
-        g.append(yNd_error)
-        g.append(zNd_error)
+        # # inequality constraint for speed
+        # g.append(xNd_error)
+        # g.append(yNd_error)
+        # g.append(zNd_error)
 
-        # inequality constraints for acceleration
-        g.append(xNdd_error)
-        g.append(yNdd_error)
-        g.append(zNdd_error)
+        # # inequality constraints for acceleration
+        # g.append(xNdd_error)
+        # g.append(yNdd_error)
+        # g.append(zNdd_error)
 
-        # inequality constraints for jerk
-        g.append(xNddd_error)
-        g.append(yNddd_error)
-        g.append(zNddd_error)
-        equality_constraints += 12
+        # # inequality constraints for jerk
+        # g.append(xNddd_error)
+        # g.append(yNddd_error)
+        # g.append(zNddd_error)
+        # equality_constraints += 12
 
         for i in range(1,self.Nw-1):
-            print("Waypoint i=", i)
-            print("discretized index=", index)
             
             index = np.floor(adjusted_start_times[i] / self.dt).astype(np.int64) 
             waypoint_dt = adjusted_start_times[i] - index * dt
+
+            print("Waypoint i=", i)
+            print("discretized index=", index)
 
             print("waypoint time:", adjusted_start_times[i])
             print("polynomial coefficient time:", index * dt)
@@ -198,13 +208,14 @@ class SegmentCasadiSolver:
         # b3_end = b3_start + N
         # c3_start = b3_end
         # c3_end = c3_start + N 
-        v_norm_start = 0 #c3_end
-        v_norm_end = v_norm_start + 3 * self.Nw
-        a_norm_start = v_norm_end
-        a_norm_end = v_norm_end + 3 * self.Nw
+        # v_norm_start = 0 #c3_end
+        # v_norm_end = v_norm_start + N
+        # a_norm_start = v_norm_end
+        # a_norm_end = v_norm_end + N
 
-        # number of constraints = velocity bounds at waypoints, acceleration bounds at waypoints + num position constraints + velocity bound + num velocity eq constraints = 4 * N + 3*N + 3*N
-        num_constraints = 3*self.Nw + 3*self.Nw + equality_constraints #3*2
+        # number of constraints = velocity and accleration norm bounds at all timesteps + num position constraints + velocity bound + num velocity eq constraints = 4 * N + 3*N + 3*N
+        # num_constraints = 2 * N + equality_constraints #3*2
+        num_constraints = equality_constraints
 
         print("num_constraints=", num_constraints)
         lb = np.zeros(num_constraints)
@@ -216,11 +227,12 @@ class SegmentCasadiSolver:
         # # C3 lower bound
         # lb[c3_start:c3_end] = -self.max_snap
         # velocity norm lower bound
-        lb[v_norm_start:v_norm_end] = -self.maxSpeed
-        # acceleartion norm lower bound
-        lb[a_norm_start:a_norm_end] = -self.max_accel_xy
-        # position and error lower bound
-        lb[a_norm_end:] = 0
+        # lb[v_norm_start:v_norm_end] = 0 #-self.maxSpeed
+        # # acceleartion norm lower bound
+        # lb[a_norm_start:a_norm_end] = 0 #-self.max_accel_xy
+        # # position and error lower bound
+        # lb[a_norm_end:] = 0
+        # lb = 0
 
 
         ub = np.zeros(num_constraints)
@@ -231,11 +243,11 @@ class SegmentCasadiSolver:
         # # C3 lower bound
         # ub[c3_start:c3_end] = self.max_snap
         # velocity norm upper bound
-        ub[v_norm_start:v_norm_end] = self.maxSpeed
-        # acceleartion norm lower bound
-        ub[a_norm_start:a_norm_end] = self.max_accel_xy        
-        # position and velocity error upper bound
-        ub[v_norm_end:] =  0
+        # ub[v_norm_start:v_norm_end] = self.maxSpeed
+        # # acceleartion norm lower bound
+        # ub[a_norm_start:a_norm_end] = self.max_accel_xy        
+        # # position and velocity error upper bound
+        # ub[v_norm_end:] =  0
 
         self.lbg = lb
         self.ubg = ub
@@ -444,7 +456,7 @@ def main():
     maxSpeed = 2 * total_length / max_time
 
 
-    dt = 1/20.0
+    dt = 1/5
 
     waypoint_desired_velocities = np.zeros(waypoints.shape)
     waypoint_desired_velocities[1:Nw-2,:] = np.inf
@@ -522,19 +534,18 @@ def main():
     ax0.plot(A0[0:-1], B0[0:-1], C0[0:-1])
 
     
-    # midpoint_idx = np.floor(waypoint_start_times[1] /  max_time * A0.shape[0])
+    midpoint_idx = np.floor(waypoint_start_times[1] /  max_time * A0.shape[0])
 
     print("A0.shape", A0.shape)
     print("sum(solver.dts)=", np.sum(solver.dts))
 
-    # A0_vals = np.array([A0[0],A0[midpoint_idx], A0[-1]])
-    # B0_vals = np.array([B0[0],B0[midpoint_idx], B0[-1]])
-    # C0_vals = np.array([C0[0],C0[midpoint_idx], C0[-1]])
+    A0_vals = np.array([A0[0],A0[midpoint_idx], A0[-1]])
+    B0_vals = np.array([B0[0],B0[midpoint_idx], B0[-1]])
+    C0_vals = np.array([C0[0],C0[midpoint_idx], C0[-1]])
 
-    A0_vals = np.array([A0[0],A0[-1]])
-    B0_vals = np.array([B0[0],B0[-1]])
-    C0_vals = np.array([C0[0],C0[-1]])
-
+    print("A0_vals", A0_vals.reshape(1,-1))
+    print("B0_vals", B0_vals.reshape(1,-1))
+    print("C0_vals", C0_vals.reshape(1,-1))
 
     ax0.scatter(A0_vals, B0_vals, C0_vals, marker="^")
     # ax0.plot(x_array,y_array,z_array)

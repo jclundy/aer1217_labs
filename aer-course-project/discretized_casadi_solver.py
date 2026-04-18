@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class SegmentCasadiSolver:
-    def __init__(self, waypoints,waypoint_desired_velocities, waypoint_start_times, dt=1/60.0, maxSpeed = 2):
+    def __init__(self, waypoints, waypoint_derivatives, waypoint_start_times, dt=1/60.0, maxSpeed = 2):
         self.waypoints = waypoints
         self.Nw = waypoints.shape[0]
         total_time = waypoint_start_times[-1] - waypoint_start_times[0]
@@ -87,9 +87,9 @@ class SegmentCasadiSolver:
             C2_i = C2[index]
             C3_i = C3[index]
             C4_i = C4[index]
-            wp_x, wp_xd, wp_xdd = compute_state_1d(A0_i,A1_i,A2_i,A3_i,A4_i, waypoint_dt)
-            wp_y, wp_yd, wp_ydd = compute_state_1d(B0_i,B1_i,B2_i,B3_i,B4_i, waypoint_dt)
-            wp_z, wp_zd, wp_zdd = compute_state_1d(C0_i,C1_i,C2_i,C3_i,C4_i, waypoint_dt)
+            wp_x, wp_xd, wp_xdd, wp_xddd= compute_state_1d(A0_i,A1_i,A2_i,A3_i,A4_i, waypoint_dt)
+            wp_y, wp_yd, wp_ydd, wp_yddd= compute_state_1d(B0_i,B1_i,B2_i,B3_i,B4_i, waypoint_dt)
+            wp_z, wp_zd, wp_zdd, wp_zddd= compute_state_1d(C0_i,C1_i,C2_i,C3_i,C4_i, waypoint_dt)
             
             # equality constraint for waypoint positions
 
@@ -108,20 +108,43 @@ class SegmentCasadiSolver:
             g.append(wp_zd)          
 
             # equality constraint for waypoint velocities #TODO - add acceleration, jerk
-            if (i == 0 or i == self.Nw-1):
-                xd_error = wp_xd - waypoint_desired_velocities[i,0]
-                yd_error = wp_yd - waypoint_desired_velocities[i,1]
-                zd_error = wp_zd - waypoint_desired_velocities[i,2]
 
-                if(waypoint_desired_velocities[i,0] != np.inf):
-                    g.append(xd_error)
-                    equality_constraints +=1
-                if(waypoint_desired_velocities[i,0] != np.inf):
-                    g.append(yd_error)
-                    equality_constraints +=1
-                if(waypoint_desired_velocities[i,0] != np.inf):
-                    g.append(zd_error)
-                    equality_constraints +=1
+            
+            xd_error = wp_xd - waypoint_derivatives[i, 0,0]
+            yd_error = wp_yd - waypoint_derivatives[i, 0,1]
+            zd_error = wp_zd - waypoint_derivatives[i, 0,2]
+
+            xdd_error = wp_xdd - waypoint_derivatives[i, 1,0]
+            ydd_error = wp_ydd - waypoint_derivatives[i, 1,1]
+            zdd_error = wp_zdd - waypoint_derivatives[i, 1,2]
+
+            xddd_error = wp_xddd - waypoint_derivatives[i, 2,0]
+            yddd_error = wp_yddd - waypoint_derivatives[i, 2,1]
+            zddd_error = wp_zddd - waypoint_derivatives[i, 2,2]
+
+            if(waypoint_derivatives[i,0, 0] != np.inf):
+                xd_error = wp_xd - waypoint_derivatives[i, 0,0]
+                yd_error = wp_yd - waypoint_derivatives[i, 0,1]
+                zd_error = wp_zd - waypoint_derivatives[i, 0,2]
+
+                xdd_error = wp_xdd - waypoint_derivatives[i, 1,0]
+                ydd_error = wp_ydd - waypoint_derivatives[i, 1,1]
+                zdd_error = wp_zdd - waypoint_derivatives[i, 1,2]
+
+                xddd_error = wp_xddd - waypoint_derivatives[i, 2,0]
+                yddd_error = wp_yddd - waypoint_derivatives[i, 2,1]
+                zddd_error = wp_zddd - waypoint_derivatives[i, 2,2]
+
+                g.append(xd_error)
+                g.append(yd_error)
+                g.append(zd_error)
+                g.append(xdd_error)
+                g.append(ydd_error)
+                g.append(zdd_error)
+                g.append(xddd_error)
+                g.append(yddd_error)
+                g.append(zddd_error)                                
+                equality_constraints +=9
 
         opt_variables = ca.vertcat(
             ca.reshape(self.A4, -1, 1), 
@@ -214,7 +237,10 @@ def compute_state_1d(P0, P1, P2, P3, P4, dt):
     # integrate acceleration
     pdd = 2 * P2 + 6 * P3 * dt + 12 * P4 * dt**2
 
-    return p, pd, pdd
+    # integrate jerk
+    pddd = 6 * P3 + 24 * P4 * dt
+
+    return p, pd, pdd, pddd
 
 
 def unroll_coefficients(P4, WP0, times):
@@ -270,22 +296,62 @@ def integrate_1d(P4,WP0, times):
     return p, pd, pdd
 
 
-def evalute_polynomials_over_control_time_step(dt,A0, A1, A2, A3, A4, B0, B1, B2, B3,B4, C0, C1, C2, C3, C4):
+# def evalute_polynomials_over_control_time_step(dt,A0, A1, A2, A3, A4, B0, B1, B2, B3,B4, C0, C1, C2, C3, C4):
+#     x_vals = np.array([])
+#     y_vals = np.array([])
+#     z_vals = np.array([])
+#     # t_vals = np.array([])
+
+#     x_vals = A0 + A1 * dt + A2 * dt**2 + A3 * dt**3 + A4 * dt**4
+#     y_vals = B0 + B1 * dt + B2 * dt**2 + B3 * dt**3 + B4 * dt**4
+#     z_vals = C0 + C1 * dt + C2 * dt**2 + C3 * dt**3 + C4 * dt**4
+
+#     x_array = np.array(x_vals).flatten()
+#     y_array = np.array(y_vals).flatten()
+#     z_array = np.array(z_vals).flatten()
+
+#     return x_array, y_array, z_array
+
+def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A3, A4, B0, B1, B2, B3,B4, C0, C1, C2, C3, C4):
     x_vals = np.array([])
     y_vals = np.array([])
     z_vals = np.array([])
-    # t_vals = np.array([])
+    t_vals = np.array([])
 
-    x_vals = A0 + A1 * dt + A2 * dt**2 + A3 * dt**3 + A4 * dt**4
-    y_vals = B0 + B1 * dt + B2 * dt**2 + B3 * dt**3 + B4 * dt**4
-    z_vals = C0 + C1 * dt + C2 * dt**2 + C3 * dt**3 + C4 * dt**4
+    prev_duration = 0
+    for idx in range(0,n):
+        duration = times[idx]
+        nsample = int(duration * freq)
+        ti = dt * np.arange(nsample)
 
+        xi = A0[idx] + A1[idx] * ti + A2[idx] * ti**2 + A3[idx] * ti**3 + A4[idx] * ti**4
+        yi = B0[idx] + B1[idx] * ti + B2[idx] * ti**2 + B3[idx] * ti**3 + B4[idx] * ti**4
+        zi = C0[idx] + C1[idx] * ti + C2[idx] * ti**2 + C3[idx] * ti**3 + C4[idx] * ti**4
+
+        # ti_total = np.array(ti) + prev_duration
+
+        # print("nsample",nsample)
+        # print("ti.shape",ti.shape)
+        # print("ti_total.shape",ti_total.shape)
+        # print("t_vals.shape",t_vals.shape)
+
+        # t_vals = np.concatenate([t_vals, ti_total.flatten()])
+
+        # print("x_vals.shape", x_vals.shape)
+        # print("xi.shape", xi.shape)
+
+        x_vals = np.concatenate([x_vals, np.array(xi).flatten()])
+        y_vals = np.concatenate([y_vals, np.array(yi).flatten()])
+        z_vals = np.concatenate([z_vals, np.array(zi).flatten()])
+        prev_duration = duration
+
+    # t_array = t_vals.flatten()
     x_array = np.array(x_vals).flatten()
     y_array = np.array(y_vals).flatten()
     z_array = np.array(z_vals).flatten()
 
+    # return t_array, x_array, y_array, z_array
     return x_array, y_array, z_array
-
 
 def generate_waypoints():
     poses = [[-1.0, -3.0, 1.0], 
@@ -327,10 +393,17 @@ def main():
     maxSpeed = 2 * total_length / max_time
 
 
-    dt = 0.5
+    dt = 0.25
 
     waypoint_desired_velocities = np.zeros(waypoints.shape)
     waypoint_desired_velocities[1:Nw-2,:] = np.inf
+
+    waypoint_desired_accelerations = np.zeros(waypoints.shape)
+    waypoint_desired_accelerations[1:Nw-2,:] = np.inf
+
+    waypoint_desired_jerks = np.zeros(waypoints.shape)
+    waypoint_desired_jerks[1:Nw-2,:] = np.inf
+
     waypoint_start_times = np.zeros((Nw,))
     for i in range(0,durations.size):
         waypoint_start_times[i+1] = waypoint_start_times[i] + durations[i]
@@ -348,9 +421,23 @@ def main():
     B0_vals = np.array([])
     C0_vals = np.array([])
 
+    A1_vals = np.array([])
+    B1_vals = np.array([])
+    C1_vals = np.array([])
+
+    A2_vals = np.array([])
+    B2_vals = np.array([])
+    C2_vals = np.array([])
+
+    A3_vals = np.array([])
+    B3_vals = np.array([])
+    C3_vals = np.array([])
+
     A4_vals = np.array([])
     B4_vals = np.array([])
     C4_vals = np.array([])
+
+    durations = np.array([])
 
     for i in range(0, Nw-1):
 
@@ -362,7 +449,18 @@ def main():
         print(segment_waypoints)
         print(segment_velocities)
         print(segment_waypoint_times)
-        solver = SegmentCasadiSolver(segment_waypoints,segment_velocities, segment_waypoint_times, dt, maxSpeed)
+
+        start_derivatives =  np.vstack([waypoint_desired_velocities[i,:], waypoint_desired_accelerations[i,:], waypoint_desired_jerks[i,:]]).reshape(-1,3)
+        end_derivatives = np.vstack([waypoint_desired_velocities[i+1,:], waypoint_desired_accelerations[i+1,:], waypoint_desired_jerks[i+1,:]]).reshape(-1,3)
+
+        segmentNumWaypoints = segment_waypoints.shape[0]
+        print("num waypoints: ", segmentNumWaypoints)
+        desired_derivatives = np.zeros((segmentNumWaypoints, 3, 3))
+        desired_derivatives[0,:,:] = start_derivatives
+        desired_derivatives[1,:,:] = end_derivatives
+
+
+        solver = SegmentCasadiSolver(segment_waypoints,desired_derivatives, segment_waypoint_times, dt, maxSpeed)
 
         n = solver.N
         a3_start = 0
@@ -393,9 +491,9 @@ def main():
         C0, C1, C2, C3, C4 = unroll_coefficients(np.array(C4),segment_waypoints[0,2],solver.dts)
 
         tn = solver.dts[n-1]
-        xn, xdn, xddn = compute_state_1d(A0[n-1],A1[n-1],A2[n-1],A3[n-1],A4[n-1], tn)
-        yn, ydn, yddn = compute_state_1d(B0[n-1],B1[n-1],B2[n-1],B3[n-1],B4[n-1], tn)
-        zn, zdn, zddn = compute_state_1d(C0[n-1],C1[n-1],C2[n-1],C3[n-1],C4[n-1], tn)
+        xn, xdn, xddn, xdddn = compute_state_1d(A0[n-1],A1[n-1],A2[n-1],A3[n-1],A4[n-1], tn)
+        yn, ydn, yddn, ydddn = compute_state_1d(B0[n-1],B1[n-1],B2[n-1],B3[n-1],B4[n-1], tn)
+        zn, zdn, zddn, zdddn = compute_state_1d(C0[n-1],C1[n-1],C2[n-1],C3[n-1],C4[n-1], tn)
 
         # Update velocity constraint at end of segment
         if(i < Nw-2):
@@ -404,28 +502,61 @@ def main():
             waypoint_desired_velocities[i+1,1] = ydn
             waypoint_desired_velocities[i+1,2] = zdn
 
-        A0_plus = np.concatenate([np.array(A0).flatten(), np.array([xn]).flatten()])
-        B0_plus = np.concatenate([np.array(B0).flatten(), np.array([yn]).flatten()])
-        C0_plus = np.concatenate([np.array(C0).flatten(), np.array([zn]).flatten()])
+            waypoint_desired_accelerations[i+1,0] = xddn
+            waypoint_desired_accelerations[i+1,1] = yddn
+            waypoint_desired_accelerations[i+1,2] = zddn
+
+            waypoint_desired_jerks[i+1,1] = ydddn
+            waypoint_desired_jerks[i+1,0] = xdddn
+            waypoint_desired_jerks[i+1,2] = zdddn
+
+        # A0_plus = np.concatenate([np.array(A0).flatten(), np.array([xn]).flatten()])
+        # B0_plus = np.concatenate([np.array(B0).flatten(), np.array([yn]).flatten()])
+        # C0_plus = np.concatenate([np.array(C0).flatten(), np.array([zn]).flatten()])
 
         A0_vals = np.concatenate([A0_vals, np.array(A0).flatten()])
         B0_vals = np.concatenate([B0_vals, np.array(B0).flatten()])
         C0_vals = np.concatenate([C0_vals, np.array(C0).flatten()])
 
-    ax0.plot(A0_vals, B0_vals, C0_vals)
+        A1_vals = np.concatenate([A1_vals, np.array(A1).flatten()])
+        B1_vals = np.concatenate([B1_vals, np.array(B1).flatten()])
+        C1_vals = np.concatenate([C1_vals, np.array(C1).flatten()])
+
+        A2_vals = np.concatenate([A2_vals, np.array(A2).flatten()])
+        B2_vals = np.concatenate([B2_vals, np.array(B2).flatten()])
+        C2_vals = np.concatenate([C2_vals, np.array(C2).flatten()])
+
+        A3_vals = np.concatenate([A3_vals, np.array(A3).flatten()])
+        B3_vals = np.concatenate([B3_vals, np.array(B3).flatten()])
+        C3_vals = np.concatenate([C3_vals, np.array(C3).flatten()])
+
+        durations = np.concatenate([durations, solver.dts.flatten()])
+
+    # ax0.scatter(A0_vals, B0_vals, C0_vals, marker='^')
 
     # plot trajectory of quadrotor evalutaed at every timestep
 
-    # x_array, y_array, z_array = evalute_polynomials_over_control_time_step(1/60.0,A0, A1, A2, A3, A4, B0, B1, B2, B3,B4, C0, C1, C2, C3, C4)
+    plot_freq = 60.0
+    plot_dt = 1/plot_freq
+    # plot_times = np.ones_like(A0_vals) * plot_dt
+    np.savez("coefficients.npz", 
+             A4=A4_vals.reshape(-1,1), 
+             B4=B4_vals.reshape(-1,1), 
+             C4=C4_vals.reshape(-1,1))
 
-    # ax0.plot(x_array,y_array,z_array)
+    N_sections = A0_vals.shape[0]
+    x_array, y_array, z_array = evalute_polynomials_over_control_time_step(durations, plot_dt, N_sections, plot_freq, 
+                                                                           A0_vals, A1_vals, A2_vals, A3_vals, A4_vals, 
+                                                                           B0_vals, B1_vals, B2_vals, B3_vals, B4_vals, 
+                                                                           C0_vals, C1_vals, C2_vals, C3_vals, C4_vals)
+
+    ax0.plot(x_array,y_array,z_array)
     ax0.set_xlabel("x")
     ax0.set_ylabel("y")
     ax0.set_zlabel("z")
 
     plt.show()
 
-    # np.savez("coefficients.npz", A4=np.ndarray(A4_vals).reshape(-1,1), B4=np.ndarray(B4_vals).reshape(-1,1), C4=np.ndarray(C4_vals).reshape(-1,1))
 
 
 if __name__ == "__main__":

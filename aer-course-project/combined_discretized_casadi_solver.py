@@ -151,7 +151,7 @@ class SegmentCasadiSolver:
 
         for i in range(1,self.Nw-1):
             
-            index = np.floor(adjusted_start_times[i] / self.dt).astype(np.int64) 
+            index = np.floor(adjusted_start_times[i] / self.dt).astype(np.int64) - 1
             waypoint_dt = adjusted_start_times[i] - index * dt
 
             print("Waypoint i=", i)
@@ -539,7 +539,7 @@ def main():
     ax0.set_ylabel("y")
     ax0.set_zlabel("z")
 
-    plt.save("smoothed_trajectory.png")
+    plt.savefig("smoothed_trajectory.png")
 
 
 

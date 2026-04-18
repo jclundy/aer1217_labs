@@ -25,17 +25,18 @@ Z_BOUNDS = (BOUNDS[2, 0], BOUNDS[2, 1])
 PADDING = 0.5 #for sample selection
 
 ##eg gate order
-GATE_ORDER = [1,3,4,2,1,4]
+GATE_ORDER = [1,3,4,1,3,2]
+
 ##RRT Variables
-ITERATION = 300
-REWIRE = 0.6
+ITERATION = 1000
+REWIRE = 0.7
 GOAL_R = 0.15
-STEP_SIZE = 0.20
+STEP_SIZE = 0.3
 MAX_SEG = 1.25 
 
 # Collision radii — inflated to account for the 0.2 m obstacle uncertainty
 OBS_RADIUS  = 0.40  # pillar radius 0.06 m + 0.20 m noise + 0.09 m drone body
-GATE_RADIUS = 0.40   # gate half-width 0.20 m + 0.20 m noise
+GATE_RADIUS = 0.40  # gate half-width 0.20 m + 0.20 m noise
 
 ##random gen
 rng = np.random.default_rng(1)
@@ -49,7 +50,7 @@ def gate_points(last_pt, gate_id, z_bounds=(0.10, 1.95)):
     """Return (approach, centre, departure) waypoints for a gate."""
 
     ##buffer
-    buf = 0.3
+    buf = 0.45
 
     ##get points
     centre = np.array(GATES[gate_id][:3], dtype=float)
@@ -96,7 +97,7 @@ def split_segment(a, b, gate):
             d = np.sqrt((pt[0]-obs[0])**2 + (pt[1]-obs[1])**2)
             if d < MIN_CLEARANCE:
                     return False
-            return True
+        return True
 
     if has_clearance(mid):
         return mid
@@ -111,7 +112,7 @@ def split_segment(a, b, gate):
             return candidate
 
     # fallback — return midpoint anyway and let the planner deal with it
-    print(f"  [warn] split_segment could not find free midpoint between {a} and {b}")
+    # print(f"  [warn] split_segment could not find free midpoint between {a} and {b}")
     return mid
 
 ##collision functions
@@ -270,7 +271,8 @@ def plan(start, goal, target_gate):
 def path(GATE_ORDER):
     ##Get waypoints
     key_pts = [START.copy()]
-    gate_ids = [-1] ##O index
+    # gate_ids = [-1] ##O index
+    gate_ids = []
 
     prev = START.copy()
     for gid in GATE_ORDER:
@@ -279,9 +281,11 @@ def path(GATE_ORDER):
         ## add pts to ensure flying in and out normal to gate
         approach, centre, departure = gate_points(prev, gid0)
         key_pts.extend([approach, centre, departure])
+        # key_pts.extend([approach, departure])
         prev = departure
     key_pts.append(GOAL.copy())
-    gate_ids.append(-1)   # final leg: no gate to pass through
+    gate_ids.append(-1) ##O index
+   
 
     ###run rrt*
     full_path = [START]
@@ -300,13 +304,13 @@ def path(GATE_ORDER):
         ##check for long segs
         dist = np.linalg.norm(np.array(seg_start) - np.array(seg_goal))
         if dist >= MAX_SEG:
-            print('long segment, splitting')
+            # print('long segment, splitting')
             half_pt = split_segment(seg_start, seg_goal, tgt_gate)
             seg1 = plan(seg_start, half_pt, tgt_gate)
             seg2 = plan(half_pt, seg_goal, tgt_gate)
             full_path.extend(seg1[1:])
             full_path.extend(seg2[1:])
-        elif dist < 0.32:
+        elif dist < 0.55:
             ##straight line 
             full_path.append(np.array(seg_goal))
         else:
@@ -389,7 +393,7 @@ def plot_path(full_path, key_waypoints):
     plt.show()
 
 if __name__ =="__main__":
-    gates = [1,3,4,2,1,4]
+    gates = [1,3,4,1,3,2]
     path, key_waypoints = path(gates)
     print("Key waypoints (gates + start/goal):")
     for i, pt in enumerate(key_waypoints):

@@ -10,7 +10,7 @@ class SegmentCasadiSolver:
         total_time = waypoint_start_times[-1] - waypoint_start_times[0]
         self.total_time = total_time
         self.dt = dt
-        self.maxSpeed = 10 * maxSpeed
+        self.maxSpeed = maxSpeed
 
         # Number of decsion variables is total time / dt
         N = np.floor(total_time / self.dt).astype(np.int64)
@@ -28,7 +28,7 @@ class SegmentCasadiSolver:
         self.B4 = ca.SX.sym('B4', N)
         self.C4 = ca.SX.sym('C4', N)
 
-        self.max_accel_xy = 5
+        self.max_accel_xy = 2 * maxSpeed / self.dt
         self.max_accel_z = 0.517
 
         self.min_time = 5
@@ -49,28 +49,108 @@ class SegmentCasadiSolver:
 
         cost = snap_integral #trajectory_integral
 
-        waypoint_discretized_indices = []
-        waypoint_time_delta = []
-
         g = []
         # constraints on decision variables
-        g.append(self.A4)
-        g.append(self.B4)
-        g.append(self.C4)
+        # g.append(self.A4)
+        # g.append(self.B4)
+        # g.append(self.C4)
 
         equality_constraints = 0
 
-        adjusted_start_times = np.zeros((N+1,))
+        adjusted_start_times = np.zeros((self.Nw,))
+        print("adjusted_start_times.shape", adjusted_start_times.shape)
+        print("waypoint_start_times.shape", waypoint_start_times.shape) 
         adjusted_start_times[1:] = waypoint_start_times[1:] - waypoint_start_times[0:-1]
 
-        for i in range(0,self.Nw):
-            index = np.floor(adjusted_start_times[i] / total_time * (N-1)).astype(np.int64) 
-            waypoint_discretized_indices.append(index)
-            waypoint_dt = adjusted_start_times[i] - index * dt
-            waypoint_time_delta.append(waypoint_dt)
+        x, xd, xdd, xddd = compute_state_1d(A0,A1,A2,A3,A4, self.dts)
+        y, yd, ydd, yddd = compute_state_1d(B0,B1,B2,B3,B4, self.dts)
+        z, zd, zdd, zddd = compute_state_1d(C0,C1,C2,C3,C4, self.dts)
 
-            print("i=",i)
-            print("index=",index)
+        # Start point equality
+        x0_error = x[0] - A0
+        y0_error = y[0] - B0
+        z0_error = z[0] - C0
+
+        x0d_error = xd[0] - A1
+        y0d_error = yd[0] - B1
+        z0d_error = zd[0] - C1
+
+        x0dd_error = xdd[0] - 2*A2
+        z0dd_error = zdd[0] - 2*B2
+        y0dd_error = ydd[0] - 2*C2
+
+        x0ddd_error = xddd[0] - 6*A3
+        y0ddd_error = yddd[0] - 6*A3
+        z0ddd_error = zddd[0] - 6*A3
+
+        g.append(x0_error)
+        g.append(y0_error)
+        g.append(z0_error)
+
+        # inequality constraint for speed
+        g.append(x0d_error)
+        g.append(y0d_error)
+        g.append(z0d_error)
+
+        # inequality constraints for acceleration
+        g.append(x0dd_error)
+        g.append(y0dd_error)
+        g.append(z0dd_error)
+
+        # inequality constraints for jerk
+        g.append(x0ddd_error)
+        g.append(y0ddd_error)
+        g.append(z0ddd_error)
+        equality_constraints += 12
+
+        # End waypoint equality
+        xN_error = x[-1] - waypoints[-1,0]
+        yN_error = y[-1] - waypoints[-1,1]
+        zN_error = z[-1] - waypoints[-1,2]
+
+        xNd_error = xd[-1] - waypoint_derivatives[-1, 0,0]
+        yNd_error = yd[-1] - waypoint_derivatives[-1, 0,1]
+        zNd_error = zd[-1] - waypoint_derivatives[-1, 0,2]
+
+        xNdd_error = xdd[-1] - waypoint_derivatives[-1, 1,0]
+        yNdd_error = ydd[-1] - waypoint_derivatives[-1, 1,1]
+        zNdd_error = zdd[-1] - waypoint_derivatives[-1, 1,2]
+
+        xNddd_error = xddd[-1] - waypoint_derivatives[-1, 2,0]
+        yNddd_error = yddd[-1] - waypoint_derivatives[-1, 2,1]
+        zNddd_error = zddd[-1] - waypoint_derivatives[-1, 2,2]
+
+        g.append(xN_error)
+        g.append(yN_error)
+        g.append(zN_error)
+
+        # inequality constraint for speed
+        g.append(xNd_error)
+        g.append(yNd_error)
+        g.append(zNd_error)
+
+        # inequality constraints for acceleration
+        g.append(xNdd_error)
+        g.append(yNdd_error)
+        g.append(zNdd_error)
+
+        # inequality constraints for jerk
+        g.append(xNddd_error)
+        g.append(yNddd_error)
+        g.append(zNddd_error)
+        equality_constraints += 12
+
+        for i in range(1,self.Nw-1):
+            print("Waypoint i=", i)
+            print("discretized index=", index)
+            
+            index = np.floor(adjusted_start_times[i] / self.dt).astype(np.int64) 
+            waypoint_dt = adjusted_start_times[i] - index * dt
+
+            print("waypoint time:", adjusted_start_times[i])
+            print("polynomial coefficient time:", index * dt)
+            print("waypoint_dt", waypoint_dt)
+
 
             A0_i = A0[index]
             A1_i = A1[index]
@@ -100,51 +180,8 @@ class SegmentCasadiSolver:
             g.append(x_error)
             g.append(y_error)
             g.append(z_error)
+            equality_constraints += 3
 
-            # inequality constraint for speed
-            # wp_v = ca.sqrt(wp_xd**2 + wp_yd**2 + wp_zd**2)
-            g.append(wp_xd)
-            g.append(wp_yd)
-            g.append(wp_zd)          
-
-            # equality constraint for waypoint velocities #TODO - add acceleration, jerk
-
-            
-            xd_error = wp_xd - waypoint_derivatives[i, 0,0]
-            yd_error = wp_yd - waypoint_derivatives[i, 0,1]
-            zd_error = wp_zd - waypoint_derivatives[i, 0,2]
-
-            xdd_error = wp_xdd - waypoint_derivatives[i, 1,0]
-            ydd_error = wp_ydd - waypoint_derivatives[i, 1,1]
-            zdd_error = wp_zdd - waypoint_derivatives[i, 1,2]
-
-            xddd_error = wp_xddd - waypoint_derivatives[i, 2,0]
-            yddd_error = wp_yddd - waypoint_derivatives[i, 2,1]
-            zddd_error = wp_zddd - waypoint_derivatives[i, 2,2]
-
-            if(waypoint_derivatives[i,0, 0] != np.inf):
-                xd_error = wp_xd - waypoint_derivatives[i, 0,0]
-                yd_error = wp_yd - waypoint_derivatives[i, 0,1]
-                zd_error = wp_zd - waypoint_derivatives[i, 0,2]
-
-                xdd_error = wp_xdd - waypoint_derivatives[i, 1,0]
-                ydd_error = wp_ydd - waypoint_derivatives[i, 1,1]
-                zdd_error = wp_zdd - waypoint_derivatives[i, 1,2]
-
-                xddd_error = wp_xddd - waypoint_derivatives[i, 2,0]
-                yddd_error = wp_yddd - waypoint_derivatives[i, 2,1]
-                zddd_error = wp_zddd - waypoint_derivatives[i, 2,2]
-
-                g.append(xd_error)
-                g.append(yd_error)
-                g.append(zd_error)
-                g.append(xdd_error)
-                g.append(ydd_error)
-                g.append(zdd_error)
-                g.append(xddd_error)
-                g.append(yddd_error)
-                g.append(zddd_error)                                
-                equality_constraints +=9
 
         opt_variables = ca.vertcat(
             ca.reshape(self.A4, -1, 1), 
@@ -156,41 +193,47 @@ class SegmentCasadiSolver:
         print("opt_constraints.shape", opt_constraints.shape)
 
         a3_start = 0
-        a3_end = a3_start + N
-        b3_start = a3_end
-        b3_end = b3_start + N
-        c3_start = b3_end
-        c3_end = c3_start + N 
-        v_norm_start = c3_end
-        v_norm_end = v_norm_start + 3 * self.Nw 
+        # a3_end = a3_start + N
+        # b3_start = a3_end
+        # b3_end = b3_start + N
+        # c3_start = b3_end
+        # c3_end = c3_start + N 
+        v_norm_start = 0 #c3_end
+        v_norm_end = v_norm_start + 3 * self.Nw
+        a_norm_start = v_norm_end
+        a_norm_end = v_norm_end + 3 * self.Nw
 
-        # number of constraints = num decision variables + num position constraints + velocity bound + num velocity eq constraints = 4 * N + 3*N + 3*N
-        num_constraints = 3 * N + 3*self.Nw + 3 * self.Nw + equality_constraints #3*2
+        # number of constraints = velocity bounds at waypoints, acceleration bounds at waypoints + num position constraints + velocity bound + num velocity eq constraints = 4 * N + 3*N + 3*N
+        num_constraints = 3*self.Nw + 3*self.Nw + equality_constraints #3*2
 
         print("num_constraints=", num_constraints)
         lb = np.zeros(num_constraints)
 
         # A3 lower bound
-        lb[a3_start:a3_end] = -self.max_snap 
-        # B3 lower bound
-        lb[b3_start:b3_end] = -self.max_snap
-        # C3 lower bound
-        lb[c3_start:c3_end] = -self.max_snap
+        # lb[a3_start:a3_end] = -self.max_snap 
+        # # B3 lower bound
+        # lb[b3_start:b3_end] = -self.max_snap
+        # # C3 lower bound
+        # lb[c3_start:c3_end] = -self.max_snap
         # velocity norm lower bound
         lb[v_norm_start:v_norm_end] = -self.maxSpeed
+        # acceleartion norm lower bound
+        lb[a_norm_start:a_norm_end] = -self.max_accel_xy
         # position and error lower bound
-        lb[v_norm_end:] = 0
+        lb[a_norm_end:] = 0
 
 
         ub = np.zeros(num_constraints)
         # A3 lower bound
-        ub[a3_start:a3_end] = self.max_snap 
-        # B3 lower bound
-        ub[b3_start:b3_end] = self.max_snap
-        # C3 lower bound
-        ub[c3_start:c3_end] = self.max_snap
+        # ub[a3_start:a3_end] = self.max_snap 
+        # # B3 lower bound
+        # ub[b3_start:b3_end] = self.max_snap
+        # # C3 lower bound
+        # ub[c3_start:c3_end] = self.max_snap
         # velocity norm upper bound
         ub[v_norm_start:v_norm_end] = self.maxSpeed
+        # acceleartion norm lower bound
+        ub[a_norm_start:a_norm_end] = self.max_accel_xy        
         # position and velocity error upper bound
         ub[v_norm_end:] =  0
 
@@ -366,10 +409,18 @@ def generate_waypoints():
     #         [-0.5, 1.5, 1.0], 
     #         [-0.5, 2.0, 1.0]]
 
+    # poses = [[-1.0, -3.0, 1.0], 
+    #         [-0.09999980975910072, -2.49952220397356, 1.0], 
+    #         [0.5, -2.5, 1.0], 
+    #         [2.0, -2.1, 1.0]]
+
     poses = [[-1.0, -3.0, 1.0], 
             [-0.09999980975910072, -2.49952220397356, 1.0], 
-            [0.5, -2.5, 1.0], 
-            [2.0, -2.1, 1.0]]
+            [0.5, -2.5, 1.0]]
+
+    # poses = [[-1.0, -3.0, 1.0], 
+    #         [0.5, -2.5, 1.0]]
+
 
     return np.array(poses).reshape(-1,3)
 
@@ -379,7 +430,7 @@ def main():
 
 
     Nw = waypoints.shape[0]
-    max_time = 60
+    max_time = 15.0
 
     p_prev = waypoints[0:Nw-1,:]
     p_next = waypoints[1:,:]
@@ -393,7 +444,7 @@ def main():
     maxSpeed = 2 * total_length / max_time
 
 
-    dt = 0.25
+    dt = 1/20.0
 
     waypoint_desired_velocities = np.zeros(waypoints.shape)
     waypoint_desired_velocities[1:Nw-2,:] = np.inf
@@ -416,8 +467,6 @@ def main():
     wz = waypoints[:,2]
 
     ax0.scatter(wx, wy, wz, marker='o')
-
-    durations = np.array([])
 
     desired_derivatives = np.zeros((Nw, 3, 3))
     desired_derivatives[1:Nw-2,:,:] = np.inf
@@ -459,18 +508,36 @@ def main():
     plot_freq = 60.0
     plot_dt = 1/plot_freq
     # plot_times = np.ones_like(A0_vals) * plot_dt
-    np.save("coefficients.npz", 
+    np.savez("coefficients.npz", 
              A4=A4.reshape(-1,1), 
              B4=B4.reshape(-1,1), 
              C4=C4.reshape(-1,1))
 
-    N_sections = A0.shape[0]
-    x_array, y_array, z_array = evalute_polynomials_over_control_time_step(durations, plot_dt, N_sections, plot_freq, 
+    # N_sections = A0.shape[0]
+    x_array, y_array, z_array = evalute_polynomials_over_control_time_step(segment_durations, plot_dt, Nw-1, plot_freq, 
                                                                            A0, A1, A2, A3, A4, 
                                                                            B0, B1, B2, B3, B4, 
                                                                            C0, C1, C2, C3, C4)
 
-    ax0.plot(x_array,y_array,z_array)
+    ax0.plot(A0[0:-1], B0[0:-1], C0[0:-1])
+
+    
+    # midpoint_idx = np.floor(waypoint_start_times[1] /  max_time * A0.shape[0])
+
+    print("A0.shape", A0.shape)
+    print("sum(solver.dts)=", np.sum(solver.dts))
+
+    # A0_vals = np.array([A0[0],A0[midpoint_idx], A0[-1]])
+    # B0_vals = np.array([B0[0],B0[midpoint_idx], B0[-1]])
+    # C0_vals = np.array([C0[0],C0[midpoint_idx], C0[-1]])
+
+    A0_vals = np.array([A0[0],A0[-1]])
+    B0_vals = np.array([B0[0],B0[-1]])
+    C0_vals = np.array([C0[0],C0[-1]])
+
+
+    ax0.scatter(A0_vals, B0_vals, C0_vals, marker="^")
+    # ax0.plot(x_array,y_array,z_array)
     ax0.set_xlabel("x")
     ax0.set_ylabel("y")
     ax0.set_zlabel("z")

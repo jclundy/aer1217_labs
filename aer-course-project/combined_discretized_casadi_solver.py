@@ -50,12 +50,13 @@ class SegmentCasadiSolver:
         cost = snap_integral #trajectory_integral
 
         g = []
+        lb_vals = []
+        ub_vals = []
         # constraints on decision variables
         # g.append(self.A4)
         # g.append(self.B4)
         # g.append(self.C4)
 
-        equality_constraints = 0
 
         adjusted_start_times = np.zeros((self.Nw,))
         print("adjusted_start_times.shape", adjusted_start_times.shape)
@@ -69,6 +70,7 @@ class SegmentCasadiSolver:
         # velocity and acceleration constraint
         # g.append(ca.sqrt(xd**2 + yd**2 + zd**2))
         # g.append(ca.sqrt(xdd**2 + ydd**2 + zdd**2))
+
 
 
         # Start point equality
@@ -91,17 +93,19 @@ class SegmentCasadiSolver:
         g.append(x0_error)
         g.append(y0_error)
         g.append(z0_error)
-        equality_constraints += 3
+        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-        # # inequality constraint for speed
-        # g.append(x0d_error)
-        # g.append(y0d_error)
-        # g.append(z0d_error)
+        # equality constraint for speed
+        g.append(x0d_error)
+        g.append(y0d_error)
+        g.append(z0d_error)
+        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-        # # inequality constraints for acceleration
-        # g.append(x0dd_error)
-        # g.append(y0dd_error)
-        # g.append(z0dd_error)
+        # equality constraints for acceleration
+        g.append(x0dd_error)
+        g.append(y0dd_error)
+        g.append(z0dd_error)
+        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
         # # inequality constraints for jerk
         # g.append(x0ddd_error)
@@ -131,23 +135,20 @@ class SegmentCasadiSolver:
         g.append(xN_error)
         g.append(yN_error)
         g.append(zN_error)
-        equality_constraints += 3
+        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-        # # inequality constraint for speed
-        # g.append(xNd_error)
-        # g.append(yNd_error)
-        # g.append(zNd_error)
 
-        # # inequality constraints for acceleration
-        # g.append(xNdd_error)
-        # g.append(yNdd_error)
-        # g.append(zNdd_error)
+        # equality constraint for speed
+        g.append(xNd_error)
+        g.append(yNd_error)
+        g.append(zNd_error)
+        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-        # # inequality constraints for jerk
-        # g.append(xNddd_error)
-        # g.append(yNddd_error)
-        # g.append(zNddd_error)
-        # equality_constraints += 12
+        # equality constraints for acceleration
+        g.append(xNdd_error)
+        g.append(yNdd_error)
+        g.append(zNdd_error)
+        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
         for i in range(1,self.Nw-1):
             
@@ -160,7 +161,6 @@ class SegmentCasadiSolver:
             print("waypoint time:", adjusted_start_times[i])
             print("polynomial coefficient time:", index * dt)
             print("waypoint_dt", waypoint_dt)
-
 
             A0_i = A0[index]
             A1_i = A1[index]
@@ -181,16 +181,47 @@ class SegmentCasadiSolver:
             wp_y, wp_yd, wp_ydd, wp_yddd= compute_state_1d(B0_i,B1_i,B2_i,B3_i,B4_i, waypoint_dt)
             wp_z, wp_zd, wp_zdd, wp_zddd= compute_state_1d(C0_i,C1_i,C2_i,C3_i,C4_i, waypoint_dt)
             
-            # equality constraint for waypoint positions
 
             x_error = wp_x - waypoints[i,0]
             y_error = wp_y - waypoints[i,1]
             z_error = wp_z - waypoints[i,2]
 
+            # equality constraint for waypoint positions
             g.append(x_error)
             g.append(y_error)
             g.append(z_error)
-            equality_constraints += 3
+
+            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+
+            g.append(wp_xd)
+            g.append(wp_yd)
+            g.append(wp_zd)           
+
+            lb_vals.append(-self.maxSpeed)
+            lb_vals.append(-self.maxSpeed)
+            lb_vals.append(-self.maxSpeed)
+
+            ub_vals.append(self.maxSpeed)
+            ub_vals.append(self.maxSpeed)
+            ub_vals.append(self.maxSpeed)
+
+            g.append(wp_xdd)
+            g.append(wp_ydd)
+            g.append(wp_zdd)           
+
+            lb_vals.append(-self.max_accel_xy)
+            lb_vals.append(-self.max_accel_xy)
+            lb_vals.append(-self.max_accel_z)
+
+            ub_vals.append(self.max_accel_xy)
+            ub_vals.append(self.max_accel_xy)
+            ub_vals.append(self.max_accel_z)
+
+            # # inequality constraints for jerk
+            # g.append(xNddd_error)
+            # g.append(yNddd_error)
+            # g.append(zNddd_error)
+            # equality_constraints += 12
 
 
         opt_variables = ca.vertcat(
@@ -202,55 +233,11 @@ class SegmentCasadiSolver:
 
         print("opt_constraints.shape", opt_constraints.shape)
 
-        a3_start = 0
-        # a3_end = a3_start + N
-        # b3_start = a3_end
-        # b3_end = b3_start + N
-        # c3_start = b3_end
-        # c3_end = c3_start + N 
-        # v_norm_start = 0 #c3_end
-        # v_norm_end = v_norm_start + N
-        # a_norm_start = v_norm_end
-        # a_norm_end = v_norm_end + N
+        self.lbg = np.array(lb_vals)
+        self.ubg = np.array(ub_vals)
 
-        # number of constraints = velocity and accleration norm bounds at all timesteps + num position constraints + velocity bound + num velocity eq constraints = 4 * N + 3*N + 3*N
-        # num_constraints = 2 * N + equality_constraints #3*2
-        num_constraints = equality_constraints
-
-        print("num_constraints=", num_constraints)
-        lb = np.zeros(num_constraints)
-
-        # A3 lower bound
-        # lb[a3_start:a3_end] = -self.max_snap 
-        # # B3 lower bound
-        # lb[b3_start:b3_end] = -self.max_snap
-        # # C3 lower bound
-        # lb[c3_start:c3_end] = -self.max_snap
-        # velocity norm lower bound
-        # lb[v_norm_start:v_norm_end] = 0 #-self.maxSpeed
-        # # acceleartion norm lower bound
-        # lb[a_norm_start:a_norm_end] = 0 #-self.max_accel_xy
-        # # position and error lower bound
-        # lb[a_norm_end:] = 0
-        # lb = 0
-
-
-        ub = np.zeros(num_constraints)
-        # A3 lower bound
-        # ub[a3_start:a3_end] = self.max_snap 
-        # # B3 lower bound
-        # ub[b3_start:b3_end] = self.max_snap
-        # # C3 lower bound
-        # ub[c3_start:c3_end] = self.max_snap
-        # velocity norm upper bound
-        # ub[v_norm_start:v_norm_end] = self.maxSpeed
-        # # acceleartion norm lower bound
-        # ub[a_norm_start:a_norm_end] = self.max_accel_xy        
-        # # position and velocity error upper bound
-        # ub[v_norm_end:] =  0
-
-        self.lbg = lb
-        self.ubg = ub
+        print("self.lbg.shape", self.lbg.shape)
+        print("self.ubg.shape", self.ubg.shape)
 
         # p - equality constraints
         nlp_prob = {'f': cost, 'x': opt_variables, 'g': opt_constraints}
@@ -421,14 +408,14 @@ def generate_waypoints():
     #         [-0.5, 1.5, 1.0], 
     #         [-0.5, 2.0, 1.0]]
 
-    # poses = [[-1.0, -3.0, 1.0], 
-    #         [-0.09999980975910072, -2.49952220397356, 1.0], 
-    #         [0.5, -2.5, 1.0], 
-    #         [2.0, -2.1, 1.0]]
-
     poses = [[-1.0, -3.0, 1.0], 
             [-0.09999980975910072, -2.49952220397356, 1.0], 
-            [0.5, -2.5, 1.0]]
+            [0.5, -2.5, 1.0], 
+            [2.0, -2.1, 1.0]]
+
+    # poses = [[-1.0, -3.0, 1.0], 
+    #         [-0.09999980975910072, -2.49952220397356, 1.0], 
+    #         [0.5, -2.5, 1.0]]
 
     # poses = [[-1.0, -3.0, 1.0], 
     #         [0.5, -2.5, 1.0]]
@@ -520,7 +507,7 @@ def main():
     plot_freq = 60.0
     plot_dt = 1/plot_freq
     # plot_times = np.ones_like(A0_vals) * plot_dt
-    np.savez("coefficients.npz", 
+    np.savez("combined_coefficients.npz", 
              A4=A4.reshape(-1,1), 
              B4=B4.reshape(-1,1), 
              C4=C4.reshape(-1,1))

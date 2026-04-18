@@ -58,11 +58,10 @@ class SegmentCasadiSolver:
         # g.append(self.C4)
 
 
-        adjusted_start_times = np.zeros((self.Nw,))
+
+        adjusted_start_times = waypoint_start_times - waypoint_start_times[0]
         print("adjusted_start_times.shape", adjusted_start_times.shape)
         print("waypoint_start_times.shape", waypoint_start_times.shape) 
-        adjusted_start_times[1:] = waypoint_start_times[1:] - waypoint_start_times[0:-1]
-
         x, xd, xdd, xddd = compute_state_1d(A0,A1,A2,A3,A4, self.dts)
         y, yd, ydd, yddd = compute_state_1d(B0,B1,B2,B3,B4, self.dts)
         z, zd, zdd, zddd = compute_state_1d(C0,C1,C2,C3,C4, self.dts)
@@ -521,14 +520,14 @@ def main():
     ax0.plot(A0[0:-1], B0[0:-1], C0[0:-1])
 
     
-    midpoint_idx = np.floor(waypoint_start_times[1] /  max_time * A0.shape[0])
+    midpoint_idx = np.floor(waypoint_start_times[1:-1] /  max_time * A0.shape[0])
 
     print("A0.shape", A0.shape)
     print("sum(solver.dts)=", np.sum(solver.dts))
 
-    A0_vals = np.array([A0[0],A0[midpoint_idx], A0[-1]])
-    B0_vals = np.array([B0[0],B0[midpoint_idx], B0[-1]])
-    C0_vals = np.array([C0[0],C0[midpoint_idx], C0[-1]])
+    A0_vals = np.concatenate([A0[0],A0[midpoint_idx], A0[-1]])
+    B0_vals = np.concatenate([B0[0],B0[midpoint_idx], B0[-1]])
+    C0_vals = np.concatenate([C0[0],C0[midpoint_idx], C0[-1]])
 
     print("A0_vals", A0_vals.reshape(1,-1))
     print("B0_vals", B0_vals.reshape(1,-1))

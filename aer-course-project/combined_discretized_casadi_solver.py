@@ -160,6 +160,12 @@ class SegmentCasadiSolver:
             print("waypoint time:", adjusted_start_times[i])
             print("polynomial coefficient time:", index * dt)
             print("waypoint_dt", waypoint_dt)
+            print("A0.shape", A0.shape)
+
+            print("last start time / dt",np.floor(adjusted_start_times[-1] / self.dt))
+            print("last start time -1  / dt",np.floor(adjusted_start_times[-2] / self.dt))
+
+
 
             A0_i = A0[index]
             A1_i = A1[index]
@@ -369,18 +375,6 @@ def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A
         yi = B0[idx] + B1[idx] * ti + B2[idx] * ti**2 + B3[idx] * ti**3 + B4[idx] * ti**4
         zi = C0[idx] + C1[idx] * ti + C2[idx] * ti**2 + C3[idx] * ti**3 + C4[idx] * ti**4
 
-        # ti_total = np.array(ti) + prev_duration
-
-        # print("nsample",nsample)
-        # print("ti.shape",ti.shape)
-        # print("ti_total.shape",ti_total.shape)
-        # print("t_vals.shape",t_vals.shape)
-
-        # t_vals = np.concatenate([t_vals, ti_total.flatten()])
-
-        # print("x_vals.shape", x_vals.shape)
-        # print("xi.shape", xi.shape)
-
         x_vals = np.concatenate([x_vals, np.array(xi).flatten()])
         y_vals = np.concatenate([y_vals, np.array(yi).flatten()])
         z_vals = np.concatenate([z_vals, np.array(zi).flatten()])
@@ -395,40 +389,70 @@ def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A
     return x_array, y_array, z_array
 
 def generate_waypoints():
-    poses = [[-1.0, -3.0, 1.0], 
-            [-0.09999980975910072, -2.49952220397356, 1.0], 
-            [0.5, -2.5, 1.0], 
-            [2.0, -2.1, 1.0], 
-            [2.0, -1.5, 1.0], 
-            [1.2999999048795503, -0.64976110198678, 1.0], 
-            [0.5999998097591007, 0.20047779602643997, 1.0], 
-            [0.0, 0.2, 1.0], 
-            [-0.5, 0.9, 1.0], 
-            [-0.5, 1.5, 1.0], 
-            [-0.5, 2.0, 1.0]]
-
-    # poses = [[-1.0, -3.0, 1.0], 
-    #         [-0.09999980975910072, -2.49952220397356, 1.0], 
-    #         [0.5, -2.5, 1.0], 
-    #         [2.0, -2.1, 1.0]]
-
-    # poses = [[-1.0, -3.0, 1.0], 
-    #         [-0.09999980975910072, -2.49952220397356, 1.0], 
-    #         [0.5, -2.5, 1.0]]
-
-    # poses = [[-1.0, -3.0, 1.0], 
-    #         [0.5, -2.5, 1.0]]
-
+    poses = [[-1.,-3.,1.],
+        [-0.574,-2.748,0.986],
+        [0.05,-2.5,1.],
+        [0.5,-2.5,1.],
+        [0.95,-2.5,1.],
+        [1.085,-1.914,1.029],
+        [1.11,-1.738,1.035],
+        [1.184,-1.053,1.],
+        [0.941,-0.617,1.005],
+        [0.781,0.029,1.004],
+        [0.45,0.5,1.],
+        [0.,0.5,1.],
+        [-0.45,0.5,1.],
+        [-0.5,1.5,1.],
+        [-0.5,1.95,1.],
+        [-0.233,1.853,0.973],
+        [-0.057,1.555,0.94,],
+        [-0.211,1.027,0.941],
+        [-0.496,0.595,0.964],
+        [-0.311,0.167,0.986],
+        [-0.225,-0.275,1.],
+        [-0.224,-0.678,1.004],
+        [-0.161,-1.371,1.021],
+        [-0.149,-2.021,1.006],
+        [0.05,-2.5,1.],
+        [0.5,-2.5,1.],
+        [0.95,-2.5,1.],
+        [1.113,-1.965,0.999],
+        [1.175,-1.42,1.],
+        [1.17,-0.898,0.989],
+        [0.942,-0.372,0.98,],
+        [0.712,0.146,0.983],
+        [0.45,0.5,1.],
+        [0.,0.5,1.],
+        [-0.45,0.5,1.],
+        [-0.344,0.233,1.048],
+        [-0.089,0.063,1.029],
+        [0.303,-0.089,1.032],
+        [0.775,-0.275,1.],
+        [1.14,-0.468,1.006],
+        [1.534,-0.655,0.988],
+        [2.,-1.05,1.],
+        [2.,-1.5,1.],
+        [2.,-1.95,1.],
+        [1.641,-1.89,1.009],
+        [1.275,-1.396,0.981],
+        [1.188,-1.011,0.985],
+        [1.055,-0.603,0.989],
+        [0.75,0.025,1.],
+        [0.491,0.562,1.],
+        [0.222,1.098,0.98,],
+        [0.038,1.624,0.996],
+        [-0.5,2.,1.]]
 
     return np.array(poses).reshape(-1,3)
 
 def main():
-    waypoints = generate_waypoints()
-    print("waypoints=", waypoints.reshape(-1,3))
+    all_waypoints = generate_waypoints()
+    waypoints = all_waypoints
+    print("waypoints.shape=", waypoints.shape)
 
 
     Nw = waypoints.shape[0]
-    max_time = 15.0
+    max_time = 30.0
 
     p_prev = waypoints[0:Nw-1,:]
     p_next = waypoints[1:,:]
@@ -442,7 +466,7 @@ def main():
     maxSpeed = 2 * total_length / max_time
 
 
-    dt = 1/5
+    dt = 0.1
 
     waypoint_desired_velocities = np.zeros(waypoints.shape)
     waypoint_desired_velocities[1:Nw-2,:] = np.inf
@@ -468,6 +492,7 @@ def main():
 
     desired_derivatives = np.zeros((Nw, 3, 3))
     desired_derivatives[1:Nw-2,:,:] = np.inf
+    desired_derivatives[11,:,:] = 0
 
     solver = SegmentCasadiSolver(waypoints,desired_derivatives, waypoint_start_times, dt, maxSpeed)
 
@@ -509,7 +534,9 @@ def main():
     np.savez("combined_coefficients.npz", 
              A4=A4.reshape(-1,1), 
              B4=B4.reshape(-1,1), 
-             C4=C4.reshape(-1,1))
+             C4=C4.reshape(-1,1),
+             times=solver.dts,
+             waypoints=waypoints)
 
     # N_sections = A0.shape[0]
     x_array, y_array, z_array = evalute_polynomials_over_control_time_step(segment_durations, plot_dt, Nw-1, plot_freq, 
@@ -539,6 +566,7 @@ def main():
     ax0.set_ylabel("y")
     ax0.set_zlabel("z")
 
+    # plt.show()
     plt.savefig("smoothed_trajectory.png")
 
 

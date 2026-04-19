@@ -46,7 +46,7 @@ import os
 
 ##GATE ORDER
 
-GATE_ORDER = [1, 2, 3, 4]
+GATE_ORDER = [1, 2, 3, 4, 2, 3]
 
 #########################
 # REPLACE THIS (END) ####
@@ -148,21 +148,21 @@ class Controller():
         #     self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
         #     waypoints=self.waypoints
         # )
-        total_time = 30
+        total_time = 45
         self.total_duration = total_time
         discretization_dt = 0.5
 
         ref_state = None
         save_file = "test_states.npz" # "trajectory_states.npz"
         recompute_trajectory = False
-        if(os.path.exists(save_file) and not recompute_trajectory):
-            print("loading saved trajectory")
-            npzfile = np.load(save_file)
-            ref_state = npzfile["ref_state"]
-        else:
-            print("generating minimum-snap trajectory")
-            ref_state = generate_trajectory(self.waypoints, total_time, discretization_dt, self.CTRL_FREQ)
-            np.savez(save_file, ref_state=ref_state)
+        # if(os.path.exists(save_file) and not recompute_trajectory):
+        #     print("loading saved trajectory")
+        #     npzfile = np.load(save_file)
+        #     ref_state = npzfile["ref_state"]
+        # else:
+        print("generating minimum-snap trajectory")
+        ref_state = generate_trajectory(self.waypoints, total_time, discretization_dt, self.CTRL_FREQ)
+        np.savez(save_file, ref_state=ref_state)
 
         print("ref_state.shape", ref_state.shape)
 

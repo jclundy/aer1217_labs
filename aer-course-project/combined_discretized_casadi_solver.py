@@ -398,7 +398,7 @@ def generate_trajectory(waypoints, total_time, discretization_dt, ctrl_freq):
     total_length = np.sum(waypoint_min_lengths)
     segment_durations = waypoint_min_lengths / total_length * total_time
 
-    maxSpeed = 2 * total_length / total_time
+    maxSpeed = 4 * total_length / total_time
 
     waypoint_desired_velocities = np.zeros(waypoints.shape)
     waypoint_desired_velocities[1:Nw-2,:] = np.inf

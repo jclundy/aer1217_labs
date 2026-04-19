@@ -386,7 +386,7 @@ def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A
 
     return states
 
-def generate_trajectory(waypoints, total_time, discretization_dt, ctrl_freq):
+def generate_trajectory(waypoints, averageSpeed, discretization_dt, ctrl_freq):
     print("waypoints.shape=", waypoints.shape)
 
     Nw = waypoints.shape[0]
@@ -396,9 +396,10 @@ def generate_trajectory(waypoints, total_time, discretization_dt, ctrl_freq):
     waypoint_min_lengths = np.linalg.norm(p_next - p_prev, axis=1)
 
     total_length = np.sum(waypoint_min_lengths)
+    total_time = total_length / averageSpeed
     segment_durations = waypoint_min_lengths / total_length * total_time
 
-    maxSpeed = 4 * total_length / total_time
+    maxSpeed = 4 *averageSpeed
 
     waypoint_desired_velocities = np.zeros(waypoints.shape)
     waypoint_desired_velocities[1:Nw-2,:] = np.inf
@@ -456,7 +457,8 @@ def generate_trajectory(waypoints, total_time, discretization_dt, ctrl_freq):
     
     euler_ref, body_rates_ref = evaluate_angular_states_over_trajectory(yaw_desired, yaw_rate_desired, a_ref, j_ref)
 
-    return np.column_stack([p_ref, v_ref, a_ref, euler_ref, body_rates_ref]).reshape(-1, 15) 
+    states = np.column_stack([p_ref, v_ref, a_ref, euler_ref, body_rates_ref]).reshape(-1, 15)
+    return states, total_time
 
 def evaluate_angular_states_over_trajectory(yaw_vals, phi_dot_vals, a_ref, j_ref):
     ref_ax = a_ref[:,0]

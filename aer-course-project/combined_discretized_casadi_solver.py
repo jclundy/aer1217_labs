@@ -433,6 +433,14 @@ def generate_trajectory(waypoints, total_time, discretization_dt, ctrl_freq):
     N_discretized_segments = A0.shape[0]
     discretized_durations = np.ones_like(A0) * discretization_dt
 
+    np.savez("combined_coefficients.npz", 
+             A4=A4,
+             B4=B4,
+             C4=C4,
+             times=solver.dts,
+             waypoints=waypoints)
+
+
     states = evalute_polynomials_over_control_time_step(discretized_durations, ctrl_dt, N_discretized_segments, ctrl_freq, 
                                                                            A0, A1, A2, A3, A4, 
                                                                            B0, B1, B2, B3, B4, 

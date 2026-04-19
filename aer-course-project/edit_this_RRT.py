@@ -39,7 +39,7 @@ except ImportError:
     from .project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory
 
 from combined_discretized_casadi_solver import generate_trajectory
-
+import os
 #########################
 # REPLACE THIS (START) ##
 #########################
@@ -124,6 +124,8 @@ class Controller():
         #########################
         # REPLACE THIS (START) ##
         #########################
+        use_interpolation = False
+
         def interpolate_path(path, points_per_metre=10):
             dense = [path[0]]
             for i in range(len(path) - 1):
@@ -136,19 +138,33 @@ class Controller():
             return dense
         
         full_path, keypts = path(GATE_ORDER)
-        dense_path = interpolate_path(full_path, points_per_metre=10)
-        self.waypoints = np.array(dense_path)
+        if(use_interpolation):
+            dense_path = interpolate_path(full_path, points_per_metre=10)
+            self.waypoints = np.array(dense_path)
+        else:
+            self.waypoints = np.array(full_path)
 
         # ref_state = hardcoded_trajectory_generator(
         #     self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
         #     waypoints=self.waypoints
         # )
         total_time = 30
+        self.total_duration = total_time
         discretization_dt = 0.5
-        ctrl_freq = 60
-        ref_state = generate_trajectory(self.waypoints, total_time, discretization_dt, ctrl_freq)
 
-        np.savez("trajectory_states.npz", ref_state=ref_state)
+        ref_state = None
+        save_file = "test_states.npz" # "trajectory_states.npz"
+        recompute_trajectory = False
+        if(os.path.exists(save_file) and not recompute_trajectory):
+            print("loading saved trajectory")
+            npzfile = np.load(save_file)
+            ref_state = npzfile["ref_state"]
+        else:
+            print("generating minimum-snap trajectory")
+            ref_state = generate_trajectory(self.waypoints, total_time, discretization_dt, self.CTRL_FREQ)
+            np.savez(save_file, ref_state=ref_state)
+
+        print("ref_state.shape", ref_state.shape)
 
         self.ref_x = ref_state[:, 0]
         self.ref_y = ref_state[:, 1]
@@ -159,7 +175,9 @@ class Controller():
         self.ref_vel, self.ref_acc         = ref_state[:,3:6], ref_state[:,6:9]
         self.ref_euler, self.ref_euler_rates = ref_state[:,9:12], ref_state[:,12:15]
 
-        t_scaled = self.waypoints
+        t_scaled = np.linspace(0, total_time, ref_state[:,0].size)
+        # t_scaled = np.arange(ref_state[:,0].size) * 
+
 
         #########################
         # REPLACE THIS (END) ####
@@ -187,6 +205,12 @@ class Controller():
         elif iteration >= 3*self.CTRL_FREQ and iteration < (self.total_duration+3)*self.CTRL_FREQ:
             step = min(iteration - 3*self.CTRL_FREQ, len(self.ref_x)-1)
             command_type = Command(1)  # cmdFullState
+            print("sending command full state")
+            print("step=",step)
+            # print("step=",step)
+            print("ref pos", self.ref_x[step],self.ref_z[step],self.ref_y[step])
+            print("ref vel", self.ref_vel[step].flatten())
+            print("ref acc", self.ref_acc[step].flatten())
             args = [np.array([self.ref_x[step], self.ref_y[step], self.ref_z[step]]),
                     self.ref_vel[step].flatten(),
                     self.ref_acc[step].flatten(),

@@ -21,7 +21,7 @@ quadrotor_config:
 
   done_on_violation: False # Whether `done` becomes True when a constraint is violated
   done_on_completion: False # Whether `done` becomes True when the task is completed (traveled all gates and 2'' hover at stabilization_goal)
-  done_on_collision: False # Whether `done` becomes True when a collision happens
+  done_on_collision: True # Whether `done` becomes True when a collision happens
   cost: competition  # Sparse reward function, if you desire, re-implement it in Quadrotor._get_reward()
                      # github.com/utiasDSL/safe-control-gym/blob/beta-iros-competition/safe_control_gym/envs/gym_pybullet_drones/quadrotor.py
   
@@ -50,18 +50,24 @@ quadrotor_config:
   # type (0: `tall` obstacle, 1: `low` obstacle)
   # NOTE: please do not modify the sequence of the original gates and obstacles defined below
   gates:
-    [  # x, y, z, r, p, y, type 
-      [ 0.5, -2.5, 0, 0, 0, -1.57, 0],      # gate 1
-      [ 2.0, -1.5, 0, 0, 0, 0,     0],      # gate 2
-      [ 0.0,  0.2, 0, 0, 0, 1.57,  0],      # gate 3
-      [-0.5,  1.5, 0, 0, 0, 0,     0]       # gate 4
+    # [  # x, y, z, r, p, y, type 
+    #   [ 0.5, -2.5, 1.0, 0, 0, -1.57, 0],      # gate 1
+    #   [ 2.0, -1.5, 1.2, 0, 0, 0,     0],      # gate 2
+    #   [ 0.0,  0.5, 0.8, 0, 0, 1.57,  0],      # gate 3
+    #   [-0.5,  1.5, 0.9, 0, 0, 0,     0]       # gate 4
+    # ]
+        [  # x, y, z, r, p, y, type 
+      [ 0.5, -2.5, 1.0, 0, 0, -1.57, 0],      # gate 1
+      [ 2.0, -1.5, 1.0, 0, 0, 0,     0],      # gate 2
+      [ 0.0,  0.5, 1.0, 0, 0, 1.57,  0],      # gate 3
+      [-0.5,  1.5, 1.0, 0, 0, 0,     0]       # gate 4
     ]
   obstacles:
     [  # x, y, z, r, p, y
-      [ 1.5, -2.5, 0, 0, 0, 0],             # obstacle 1
-      [ 0.5, -1.0, 0, 0, 0, 0],             # obstacle 2
-      [ 1.5,    0, 0, 0, 0, 0],             # obstacle 3
-      [-1.0,    0, 0, 0, 0, 0]              # obstacle 4
+      [ 1.5, -2.5, 1.3, 0.35, 0, 0],             # obstacle 1
+      [ 0.5, -1.0, 1.3, 0.35, 0, 0],             # obstacle 2
+      [ 1.5,    0, 1.3, 0.35, 0, 0],             # obstacle 3
+      [-1.0,    0, 1.3, 0.35, 0, 0]
     ]
 
   # Randomization of the initial state

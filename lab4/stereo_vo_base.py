@@ -23,14 +23,12 @@ class StereoCamera:
         self.fy = fy
         self.cu = cu
         self.cv = cv
-
-    def inverse_stereo_model(self, ul, vl, ur, vr):
-        rho = np.zeros((len(ul),3))
-        scale = self.baseline / (ul - ur)
-        rho[:, 0] = (0.5 * (ul + ur) - self.cu) * scale
-        rho[:, 1] = (self.fx/self.fy * (0.5 * (vl + vr) - self.cv))* scale
-        rho[:, 2] = self.fx * scale
-        return rho
+    def calc_3D_point(self, u_l, v_l, u_r, v_r):
+        d = u_l - u_r
+        z = (self.fx * self.baseline) / d
+        x = (u_l - self.cu) * z / self.fx
+        y = (v_l - self.cv) * z / self.fy
+        return d, x, y, z
 
 class VisualOdometry:
     def __init__(self, cam):
@@ -130,28 +128,81 @@ class VisualOdometry:
         # ------------- start your code here -------------- #
         f_l_prev, f_l_cur = features_coor[:,0:2], features_coor[:,4:6]
 
-        # Inverse stereo model to 3D points from previous frame and curretn frame
-        ul_prev = f_l_prev[:,0]
-        vl_prev = f_l_prev[:,1]
-        ur_prev = f_r_prev[:,0]
-        vr_prev = f_r_prev[:,1]
-        points_prev = self.cam.inverse_stereo_model(ul_prev, vl_prev, ur_prev, vr_prev)
+        ##3d locations
+        d, x, y, z = self.cam.calc_3D_point(f_l_prev[:,0], f_l_prev[:,1], f_r_prev[:,0], f_r_prev[:,1]) #prev
+        p_a = np.vstack((x, y, z)).T
+        
+        d, x, y, z = self.cam.calc_3D_point(f_l_cur[:,0], f_l_cur[:,1], f_r_cur[:,0], f_r_cur[:,1])  #curr
+        p_b = np.vstack((x, y, z)).T
+        
+        #inliers
+        inlier_idx = self.get_inliers(p_a, p_b)
+        inlier_pre = p_a[inlier_idx]
+        inlier_curr = p_b[inlier_idx]
 
-        ul_cur = f_l_cur[:,0]
-        vl_cur = f_l_cur[:,1]
-        ur_cur = f_r_cur[:,0]
-        vr_cur = f_r_cur[:,1]
-        points_cur = self.cam.inverse_stereo_model(ul_cur, vl_cur, ur_cur, vr_cur)
+        ##R and t estimation
+        C, r = self.compute_model(inlier_pre, inlier_curr)
 
-        # Run RANSAC to get indices of inlier points
-        inlier_indices = get_ransac_inlier_indices(points_prev, points_cur, iterations=20, error_threshold=0.5, samples_per_iteration=3)
+        # replace (1) the dummy C and r to the estimated C and r. 
+        #         (2) the original features to the filtered features
+        return C, r, f_r_prev[inlier_idx], f_r_cur[inlier_idx]
+    
+    def compute_model(self, p_a, p_b):
+        ##compute centre of each point cloud
+        p_a_centre = np.mean(p_a, axis=0)
+        p_b_centre = np.mean(p_b, axis=0)
 
-        inlier_prev = points_prev[inlier_indices]
-        inlier_cur = points_cur[inlier_indices]
+        ##center the point clouds
+        p_a_centered = p_a - p_a_centre
+        p_b_centered = p_b - p_b_centre
 
-        # Compute camera pose with inliers
-        C, r = compute_model(inlier_prev, inlier_cur)
-        return C, r, f_r_prev[inlier_indices], f_r_cur[inlier_indices]
+        # compute the covariance matrix
+        W_ba = (p_b_centered.T @ p_a_centered) / p_a.shape[0]
+
+        #SVD decomposition
+        U, S, Vt = np.linalg.svd(W_ba)
+
+        #rotation matrix
+        det_U = np.linalg.det(Vt.T)
+        det_V = np.linalg.det(U)
+        diag_mat = np.diag([1, 1, det_U * det_V])
+        
+        R = U @ diag_mat @ Vt
+        # R = U @ Vt
+
+        #translation vector
+        t = p_b_centre - R @ p_a_centre
+        
+        return R, t
+    
+    def get_inliers(self, p_a, p_b, iterations=10, threshold=0.5):
+        N = p_a.shape[0]
+        max_inliers = 0
+        inlier_idx = []
+        for i in range(iterations):
+            # Randomly select 3 points from each point cloud
+            idx = np.random.choice(N, 3, replace=False)
+            p_a_sample = p_a[idx]
+            p_b_sample = p_b[idx]
+
+            # Compute the model (R and t) using the selected points
+            R, t = self.compute_model(p_a_sample, p_b_sample)
+
+            # Transform p_a using the estimated model
+            p_b_pred = (R @ p_a.T).T + t
+
+            ##errors
+            errors = np.linalg.norm(p_b - p_b_pred, axis=1)
+
+            #inliers based on the threshold
+            inlier_idx = np.where(errors < threshold)[0]
+            inlier_count = len(inlier_idx)
+            if inlier_count > max_inliers:
+                max_inliers = inlier_count
+                best_inlier_idx = inlier_idx
+        
+        return best_inlier_idx
+
     
     def processFirstFrame(self, img_left, img_right):
         kp_l, des_l, feature_l_img = self.feature_detection(img_left)
@@ -236,55 +287,4 @@ class VisualOdometry:
         
         return frame_left, frame_right 
 
-def compute_model(points_a, points_b):
-    # compute averages
-    pa = np.mean(points_a, axis=0)
-    pb = np.mean(points_b, axis=0)
 
-    # sum of weights is equal to num points
-    N = points_a.shape[0]
-    w = N
-
-    # compute differences
-    pb_diff = points_b - pb
-    pa_diff = points_a - pa
-
-    # Sum up weighted average differences should be 3x3
-    W_ba = 1/float(w)* pa_diff.T @ pb_diff
-
-    # Singular value decomposition
-    U, _, V_T = np.linalg.svd(W_ba, full_matrices=True)
-    # 4) Final rotation and translation
-    S = np.eye(3,3)
-    S[2,2] = np.linalg.det(U) * np.linalg.det(V_T)
-
-    # Compute rotation
-    C_ba = V_T.T @ S @ U.T
-
-    # Compute translation
-    r_ba = -C_ba.T @ pb + pa
-    # r_ab = -C_ba @ pa + pb
-
-    return C_ba, -C_ba @ r_ba
-
-def get_ransac_inlier_indices(points_prev, points_cur, iterations=10, error_threshold=0.5, samples_per_iteration=3):
-    N = points_prev.shape[0]
-    final_inliers = []
-
-    for i in range(0, iterations):
-        indices = np.random.randint(0,N, (samples_per_iteration,1))
-        points_a = points_prev[indices].reshape(-1, 3)
-        points_b = points_cur[indices].reshape(-1,3)
-
-        C_ba, r_ba = compute_model(points_a, points_b)
-
-        points_cur_predicted = C_ba @ points_prev.T + r_ba.reshape(3,1)
-        prediction_error = np.linalg.norm(points_cur - points_cur_predicted.T, axis=1)
-
-        inlier_indices = np.argwhere(prediction_error < error_threshold).flatten()
-        inlier_count = len(inlier_indices)
-
-        if(inlier_count > len(final_inliers)):
-            final_inliers = inlier_indices
-
-    return final_inliers

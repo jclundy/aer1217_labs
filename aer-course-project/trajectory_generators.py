@@ -93,7 +93,10 @@ def circle_trajectory_generator(initial_obs, radius, duration, ctrl_freq):
     return np.array(ref_state).reshape(-1, 15)
 
 
-def hardcoded_trajectory_generator(initial_obs, initial_info, ctrl_freq, duration):
+def hardcoded_trajectory_generator(initial_obs, initial_info, ctrl_freq, duration, waypoints=None):
+    if waypoints is not None:
+        poses = list(waypoints)
+    else:
         # Example code: hardcode waypoints
         poses = []
         poses.append((initial_obs[0], initial_obs[2], initial_obs[4]))
@@ -105,96 +108,96 @@ def hardcoded_trajectory_generator(initial_obs, initial_info, ctrl_freq, duratio
         poses.append((-0.5,  2.0, 2.0))
         poses.append([initial_info["x_reference"][0], initial_info["x_reference"][2], initial_info["x_reference"][4]])
 
-        # Polynomial fit.
-        waypoints = np.array(poses)
-        deg = 6
-        t = np.arange(waypoints.shape[0])
-        fx = np.poly1d(np.polyfit(t, waypoints[:,0], deg))
-        fy = np.poly1d(np.polyfit(t, waypoints[:,1], deg))
-        fz = np.poly1d(np.polyfit(t, waypoints[:,2], deg))
-        t_scaled = np.linspace(t[0], t[-1], int(duration*ctrl_freq))
+    # Polynomial fit.
+    waypoints = np.array(poses)
+    deg = min(6, len(poses) - 1)
+    t = np.arange(waypoints.shape[0])
+    fx = np.poly1d(np.polyfit(t, waypoints[:,0], deg))
+    fy = np.poly1d(np.polyfit(t, waypoints[:,1], deg))
+    fz = np.poly1d(np.polyfit(t, waypoints[:,2], deg))
+    t_scaled = np.linspace(t[0], t[-1], int(duration*ctrl_freq))
 
-        # velocity polynomial
-        dfx = fx.deriv()
-        dfy = fy.deriv()
-        dfz = fz.deriv()
+    # velocity polynomial
+    dfx = fx.deriv()
+    dfy = fy.deriv()
+    dfz = fz.deriv()
 
-        # acceleration polynomial
-        ddfx = dfx.deriv()
-        ddfy = dfy.deriv()
-        ddfz = dfz.deriv()
+    # acceleration polynomial
+    ddfx = dfx.deriv()
+    ddfy = dfy.deriv()
+    ddfz = dfz.deriv()
 
-        # jerk polynomial
-        d3fx = dfx.deriv()
-        d3fy = dfy.deriv()
-        d3fz = dfz.deriv()
+    # jerk polynomial
+    d3fx = dfx.deriv()
+    d3fy = dfy.deriv()
+    d3fz = dfz.deriv()
 
-        # position
-        ref_x = fx(t_scaled)
-        ref_y = fy(t_scaled)
-        ref_z = fz(t_scaled)
+    # position
+    ref_x = fx(t_scaled)
+    ref_y = fy(t_scaled)
+    ref_z = fz(t_scaled)
 
-        # velocity
-        ref_vx = dfx(t_scaled)
-        ref_vy = dfy(t_scaled)
-        ref_vz = dfz(t_scaled)
+    # velocity
+    ref_vx = dfx(t_scaled)
+    ref_vy = dfy(t_scaled)
+    ref_vz = dfz(t_scaled)
 
-        # accleration
-        ref_ax = ddfx(t_scaled)
-        ref_ay = ddfy(t_scaled)
-        ref_az = ddfz(t_scaled)
+    # accleration
+    ref_ax = ddfx(t_scaled)
+    ref_ay = ddfy(t_scaled)
+    ref_az = ddfz(t_scaled)
+
+    # jerk
+    ref_jx = d3fx(t_scaled)
+    ref_jy = d3fy(t_scaled)
+    ref_jz = d3fz(t_scaled)
+
+    # euler values
+    euler_values = []
+    # body rates
+    body_rates = []
+
+    for i in range(0, int(duration*ctrl_freq)):
+        # desired yaw angle
+        # vx = ref_vx[i]
+        # vy = ref_vy[i]
+
+        yaw_des = initial_obs[8]
+        phi_dot = 0
+
+        a = np.array([ref_ax[i], ref_ay[i], ref_az[i]])
+        g = 9.8
+        a_des = a + np.array([0.,0.,g])
+
+        z_b = a_des / np.linalg.norm(a_des)
+        x_c = np.array([np.cos(yaw_des), np.sin(yaw_des), 0])
+        y_c = np.array([-np.sin(yaw_des), np.cos(yaw_des), 0])
+        x_b = np.cross(y_c, z_b)
+        x_b = x_b / np.linalg.norm(x_b)
+        y_b = np.cross(z_b, x_b)
+        y_b = y_b / np.linalg.norm(y_b)
+        R = np.column_stack([x_b, y_b, z_b])
+
+        euler = Rotation.from_matrix(R).as_euler('xyz', degrees=False).reshape(-1,1)
+        T = np.linalg.norm(a_des)
+
+        euler_values.append(euler)
 
         # jerk
-        ref_jx = d3fx(t_scaled)
-        ref_jy = d3fy(t_scaled)
-        ref_jz = d3fz(t_scaled)
+        c = T
+        j = np.array([ref_jx[i],ref_jy[i],ref_jz[i]]).T
 
-        # euler values
-        euler_values = []
-        # body rates
-        body_rates = []
+        w_x = - y_b.T @ j / c
+        w_y = x_b.T @ j / c
+        w_z = phi_dot * x_c.T @ x_b + w_y * y_c.T @ z_b
 
-        for i in range(0, int(duration*ctrl_freq)):
-            # desired yaw angle
-            # vx = ref_vx[i]
-            # vy = ref_vy[i]
+        body_rates.append(np.array([w_x, w_y, w_z]))
 
-            yaw_des = initial_obs[8]
-            phi_dot = 0
+    p_ref = np.column_stack((ref_x, ref_y, ref_z))
+    v_ref = np.column_stack((ref_vx, ref_vy, ref_vz))
+    a_ref = np.column_stack((ref_ax, ref_ay, ref_az))
 
-            a = np.array([ref_ax[i], ref_ay[i], ref_az[i]])
-            g = 9.8
-            a_des = a + np.array([0.,0.,g])
+    euler_ref = np.array(euler_values).reshape(-1,3)
+    body_rates_ref = np.array(body_rates).reshape(-1,3)
 
-            z_b = a_des / np.linalg.norm(a_des)
-            x_c = np.array([np.cos(yaw_des), np.sin(yaw_des), 0])
-            y_c = np.array([-np.sin(yaw_des), np.cos(yaw_des), 0])
-            x_b = np.cross(y_c, z_b)
-            x_b = x_b / np.linalg.norm(x_b)
-            y_b = np.cross(z_b, x_b)
-            y_b = y_b / np.linalg.norm(y_b)
-            R = np.column_stack([x_b, y_b, z_b])
-
-            euler = Rotation.from_matrix(R).as_euler('xyz', degrees=False).reshape(-1,1)
-            T = np.linalg.norm(a_des)
-
-            euler_values.append(euler)
-
-            # jerk
-            c = T
-            j = np.array([ref_jx[i],ref_jy[i],ref_jz[i]]).T
-
-            w_x = - y_b.T @ j / c
-            w_y = x_b.T @ j / c
-            w_z = phi_dot * x_c.T @ x_b + w_y * y_c.T @ z_b
-
-            body_rates.append(np.array([w_x, w_y, w_z]))
-
-        p_ref = np.column_stack((ref_x, ref_y, ref_z))
-        v_ref = np.column_stack((ref_vx, ref_vy, ref_vz))
-        a_ref = np.column_stack((ref_ax, ref_ay, ref_az))
-
-        euler_ref = np.array(euler_values).reshape(-1,3)
-        body_rates_ref = np.array(body_rates).reshape(-1,3)
-
-        return np.column_stack([p_ref, v_ref, a_ref, euler_ref, body_rates_ref]).reshape(-1, 15)
+    return np.column_stack([p_ref, v_ref, a_ref, euler_ref, body_rates_ref]).reshape(-1, 15)

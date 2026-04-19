@@ -213,7 +213,84 @@ def run(test=False):
             stats.append(episode_stats)
             # break the loop when the trajectory is complete
             break 
+    # Run an experiment.
+    ep_start = time.time()
+    first_ep_iteration = True
+    
+    # --- [MODIFICATION START] Wrap loop in try/finally ---
+    try:
+        for i in range(config.num_episodes*CTRL_FREQ*env.EPISODE_LEN_SEC):
+            # label for if the trajectory is complete
+            complete = False
+            # Elapsed sim time.
+            curr_time = (i-episode_start_iter)*CTRL_DT # CTRL_DT = 0.02
 
+            # ... (Keep all existing loop content exactly as it is) ...
+            # ... (ensure indentation matches the new 'try' block) ...
+
+            # Compute control commands
+            if first_ep_iteration:
+                reward = 0
+                done = False
+                info = {}
+                first_ep_iteration = False
+            
+            # Get reference pos, vel, acc from the circle trajectory
+            target_pos, target_vel, target_acc = ctrl.getRef(curr_time, obs, reward, done, info)
+            
+            action = ctrl.computeAction(obs, target_pos, target_vel, target_acc)
+            
+            # Get new observation after taking the computed actions
+            obs, reward, done, info = env.step(action)
+
+            # ... (Keep the rest of the loop content: stats, printouts, sync, etc.) ...
+            
+            # Add up reward, collisions, violations.
+            cumulative_reward += reward
+            if info["collision"][1]:
+                collisions_count += 1
+                collided_objects.add(info["collision"][0])
+            if 'constraint_values' in info and info['constraint_violation'] == True:
+                violations_count += 1
+
+            # Printouts.
+            if config.verbose and i%int(CTRL_FREQ/2) == 0:
+                print('\n'+str(i)+'-th step.')
+                print('\tApplied action: ' + str(action))
+                # ... (keep existing printouts) ...
+
+            # Synchronize the GUI.
+            if config.quadrotor_config.gui:
+                sync(i-episode_start_iter, ep_start, CTRL_DT)
+
+            # If an episode is complete, reset the environment.
+            if done or complete:
+                # ... (keep existing stats appending code) ...
+                # break the loop when the trajectory is complete
+                break 
+
+    except KeyboardInterrupt:
+        print("\nSimulation stopped by user (Ctrl+C).")
+    except Exception as e:
+        print(f"\nSimulation crashed with error: {e}")
+        # Optional: Print traceback to see where it crashed
+        import traceback
+        traceback.print_exc()
+
+    finally:
+        # --- [MODIFICATION] Call the Plotter ---
+        print("\nAttempting to plot results...")
+        
+        # We need to find where 'plot_results' lives. 
+        # Usually 'ctrl' is the Planner, and 'ctrl.ctrl' is your GeoController.
+        if hasattr(ctrl, 'ctrl') and hasattr(ctrl.ctrl, 'plot_results'):
+            ctrl.ctrl.plot_results()
+        elif hasattr(ctrl, 'plot_results'):
+            ctrl.plot_results()
+        else:
+            print("Warning: Could not find 'plot_results' method. Make sure it is added to GeoController.")
+
+    # --- [MODIFICATION END] ---
     # Close the environment and print timing statistics.
     env.close()
     elapsed_sec = time.time() - START

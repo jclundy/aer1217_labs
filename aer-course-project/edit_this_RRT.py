@@ -143,10 +143,12 @@ class Controller():
         #     self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
         #     waypoints=self.waypoints
         # )
-        total_time = 45
-        discretization_dt = 0.25
+        total_time = 30
+        discretization_dt = 0.5
         ctrl_freq = 60
         ref_state = generate_trajectory(self.waypoints, total_time, discretization_dt, ctrl_freq)
+
+        np.savez("trajectory_states.npz", ref_state=ref_state)
 
         self.ref_x = ref_state[:, 0]
         self.ref_y = ref_state[:, 1]

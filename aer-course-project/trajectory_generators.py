@@ -110,7 +110,7 @@ def hardcoded_trajectory_generator(initial_obs, initial_info, ctrl_freq, duratio
 
     # Polynomial fit.
     waypoints = np.array(poses)
-    deg = min(6, len(poses) - 1)
+    deg = min(10, len(poses) - 1)
     t = np.arange(waypoints.shape[0])
     fx = np.poly1d(np.polyfit(t, waypoints[:,0], deg))
     fy = np.poly1d(np.polyfit(t, waypoints[:,1], deg))

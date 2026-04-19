@@ -42,61 +42,61 @@ class Controller():
         #########################
         # REPLACE THIS (START) ##
         #########################
-        gate_sequence = [0, 1, 2, 3]
+        gate_sequence = [1, 3, 4, 2, 1, 4]
         gates = initial_info["nominal_gates_pos_and_type"]
-        tall_h = initial_info["gate_dimensions"]["tall"]["height"]
-        low_h  = initial_info["gate_dimensions"]["low"]["height"]
-        start_z = tall_h if use_firmware else self.initial_obs[4]
-        self.total_duration = 20
+        self.total_duration = 30      # <-- tune for speed
+        FLIGHT_Z = 1.0                # fixed flight height throughout
+        APPROACH_DIST = 0.65          # approach/exit offset along gate normal
+        INTERP_SPACING = 0.25          # metres between interpolated waypoints; decrease for tighter fit
 
-        obstacles = [(ob[0], ob[1], 0.55) for ob in self.NOMINAL_OBSTACLES]
+        obstacles = [(ob[0], ob[1], 0.65) for ob in self.NOMINAL_OBSTACLES]
         planner = ecu.RRTStar(obstacles, bounds=(-3.5, 3.5, -3.5, 3.5))
 
-        waypoints = [[self.initial_obs[0], self.initial_obs[2], start_z]]
+        waypoints = [[self.initial_obs[0], self.initial_obs[2], FLIGHT_Z]]
         current = [self.initial_obs[0], self.initial_obs[2]]
 
         # Build key targets: approach + gate center + exit for each gate, then final target
         targets = []
         for idx in gate_sequence:
             g = gates[idx]
-            goal_z = tall_h if g[6] == 0 else low_h
             normal = np.array([np.sin(g[5]), np.cos(g[5])])
             if np.dot(normal, np.array([g[0], g[1]]) - np.array(current)) > 0:
                 normal = -normal
-            targets.append(([g[0] + 0.70*normal[0], g[1] + 0.70*normal[1]], goal_z))  # approach
-            targets.append(([g[0], g[1]], goal_z))                                    # gate center
-            targets.append(([g[0] - 0.70*normal[0], g[1] - 0.70*normal[1]], goal_z))  # exit
+            targets.append(([g[0] + APPROACH_DIST*normal[0], g[1] + APPROACH_DIST*normal[1]], FLIGHT_Z))
+            targets.append(([g[0], g[1]], FLIGHT_Z))
+            targets.append(([g[0] - APPROACH_DIST*normal[0], g[1] - APPROACH_DIST*normal[1]], FLIGHT_Z))
             current = [g[0], g[1]]
         t = initial_info["x_reference"]
-        targets.append(([t[0], t[2]], t[4]))  # final target
+        targets.append(([t[0], t[2]], FLIGHT_Z))
 
         # For each target, use direct path or RRT* if blocked
         current = [self.initial_obs[0], self.initial_obs[2]]
         for (goal, goal_z) in targets:
             if not planner._edge_free(ecu.Node(*current), ecu.Node(*goal)):
-                print(f"RRT* triggered: {current} -> {goal}")
                 path = planner.plan(current, goal)
                 path[-1] = goal
-                n = len(path)
-                for i, pt in enumerate(path[1:], 1):
-                    z = waypoints[-1][2] + (goal_z - waypoints[-1][2]) * i / (n - 1)
-                    waypoints.append([pt[0], pt[1], z])
+                for pt in path[1:]:
+                    waypoints.append([pt[0], pt[1], FLIGHT_Z])
             else:
-                if np.hypot(goal[0]-current[0], goal[1]-current[1]) > 2.0:
-                    waypoints.append([(current[0]+goal[0])/2, (current[1]+goal[1])/2, goal_z])
-                waypoints.append([goal[0], goal[1], goal_z])
+                dist = np.hypot(goal[0]-current[0], goal[1]-current[1])
+                n_interp = max(1, int(dist / INTERP_SPACING))
+                for i in range(1, n_interp + 1):
+                    alpha = i / n_interp
+                    waypoints.append([
+                        current[0] + alpha * (goal[0] - current[0]),
+                        current[1] + alpha * (goal[1] - current[1]),
+                        FLIGHT_Z
+                    ])
             current = goal
 
         self.waypoints = np.array(waypoints)
-
         ref_state = hardcoded_trajectory_generator(
             self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
             waypoints=self.waypoints
         )
-        self.ref_x, self.ref_y, self.ref_z = ref_state[:,0], ref_state[:,1], ref_state[:,2]
-        self.ref_vel, self.ref_acc         = ref_state[:,3:6], ref_state[:,6:9]
+        self.ref_x, self.ref_y, self.ref_z  = ref_state[:,0], ref_state[:,1], ref_state[:,2]
+        self.ref_vel, self.ref_acc          = ref_state[:,3:6], ref_state[:,6:9]
         self.ref_euler, self.ref_euler_rates = ref_state[:,9:12], ref_state[:,12:15]
-
         return np.linspace(0, self.total_duration, len(ref_state))
         #########################
         # REPLACE THIS (END) ####

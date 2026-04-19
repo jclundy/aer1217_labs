@@ -38,6 +38,8 @@ except ImportError:
     # PyTest import.
     from .project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory
 
+from combined_discretized_casadi_solver import generate_trajectory
+
 #########################
 # REPLACE THIS (START) ##
 #########################
@@ -137,10 +139,14 @@ class Controller():
         dense_path = interpolate_path(full_path, points_per_metre=10)
         self.waypoints = np.array(dense_path)
 
-        ref_state = hardcoded_trajectory_generator(
-            self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
-            waypoints=self.waypoints
-        )
+        # ref_state = hardcoded_trajectory_generator(
+        #     self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
+        #     waypoints=self.waypoints
+        # )
+        total_time = 45
+        discretization_dt = 0.25
+        ctrl_freq = 60
+        ref_state = generate_trajectory(self.waypoints, total_time, discretization_dt, ctrl_freq)
 
         self.ref_x = ref_state[:, 0]
         self.ref_y = ref_state[:, 1]

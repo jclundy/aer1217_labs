@@ -25,6 +25,10 @@ B0, B1, B2, B3, B4 = unroll_coefficients(np.array(B4_vals),waypoints[0,1],dts)
 A0, A1, A2, A3, A4 = unroll_coefficients(np.array(A4_vals),waypoints[0,0],dts)
 C0, C1, C2, C3, C4 = unroll_coefficients(np.array(C4_vals),waypoints[0,2],dts)
 
+print("A4=",A4)
+print("B4=",B4)
+print("C4=",C4)
+
 ax0 = plt.figure().add_subplot(projection='3d')
 
 wx = waypoints[:,0]

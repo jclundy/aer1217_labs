@@ -26,6 +26,12 @@ ax0.scatter(wx, wy, wz, marker='^')
 x_vals = states[:,0]
 y_vals = states[:,1]
 z_vals = states[:,2]
+
+print("states.shape", states.shape)
+print(x_vals)
+print(y_vals)
+print(z_vals)
+
 ax0.plot(x_vals,y_vals,z_vals)
 ax0.set_xlabel("x")
 ax0.set_ylabel("y")

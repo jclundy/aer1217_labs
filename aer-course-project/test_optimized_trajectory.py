@@ -1,5 +1,8 @@
-# from combined_discretized_casadi_solver import *
-from fixed_number_of_subections_discretized_solver import *
+use_discretized = True
+if use_discretized:
+    from fixed_number_of_subections_discretized_solver import *
+else:
+    from combined_discretized_casadi_solver import *
 
 def generate_waypoints():
     poses = [[-1.,-3.,1.],
@@ -60,17 +63,19 @@ def generate_waypoints():
 
 def main():
     all_waypoints = generate_waypoints()
-    waypoints = all_waypoints[0:12,:]
+    waypoints = all_waypoints[0:3,:]
    
     # total_time = 30.3
-    # discretization_dt = 0.2
 
     average_speed = 0.5
     ctrl_freq = 60
 
-    numSubsections = 5
-    
-    states, total_duration = generate_trajectory(waypoints, average_speed, numSubsections, ctrl_freq)
+    if use_discretized:
+        numSubsections = 51  
+        states, total_duration = generate_trajectory(waypoints, average_speed, numSubsections, ctrl_freq)
+    else:
+        discretization_dt = 1/30.0
+        states, total_duration = generate_trajectory(waypoints, average_speed, discretization_dt, ctrl_freq)
 
     ax0 = plt.figure().add_subplot(projection='3d')
 

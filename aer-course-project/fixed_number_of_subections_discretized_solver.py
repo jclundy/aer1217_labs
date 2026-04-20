@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
 
 class SegmentCasadiSolver:
-    def __init__(self, waypoints, waypoint_derivatives, waypoint_start_times, control_dt=1/60.0, maxSpeed = 2, numSubsections=5):
+    def __init__(self, waypoints, waypoint_derivatives, waypoint_start_times, control_dt, maxSpeed, numSubsections):
         self.waypoints = waypoints
         self.Nw = waypoints.shape[0]
         total_time = waypoint_start_times[-1] - waypoint_start_times[0]
@@ -32,8 +32,8 @@ class SegmentCasadiSolver:
         self.B4 = ca.SX.sym('B4', N)
         self.C4 = ca.SX.sym('C4', N)
 
-        self.max_accel_xy = (maxSpeed - 0) /( numSubsections * control_dt)
-        self.max_accel_z = 0.517
+        self.max_accel_xy = (2 * maxSpeed ) /( control_dt)
+        self.max_accel_z = (2 * maxSpeed ) /( control_dt)
 
         self.min_time = 5
 
@@ -54,15 +54,15 @@ class SegmentCasadiSolver:
         B0, B1, B2, B3, B4 = unroll_coefficients(self.B4,waypoints[0,1],self.dts)
         C0, C1, C2, C3, C4 = unroll_coefficients(self.C4,waypoints[0,2],self.dts)
 
-        # path_x = A0 + A1 * self.dts + A2 * self.dts**2 + A3 * self.dts**3 + A4 * self.dts**4
-        # path_y = B0 + B1 * self.dts + B2 * self.dts**2 + B3 * self.dts**3 + B4 * self.dts**4
-        # path_z = C0 + C1 * self.dts + C2 * self.dts**2 + C3 * self.dts**3 + C4 * self.dts**4
+        # path_x = A0 + A1 * self.dts + A2 * self.dts**2 + A3 * self.dts**3 + A4 * self.dts**4 - A0[0]
+        # path_y = B0 + B1 * self.dts + B2 * self.dts**2 + B3 * self.dts**3 + B4 * self.dts**4 - B0[0]
+        # path_z = C0 + C1 * self.dts + C2 * self.dts**2 + C3 * self.dts**3 + C4 * self.dts**4 - C0[0]
 
-        # path_sum = ca.sum(ca.sqrt(path_x**2 + path_y**2 + path_z**2))   
+        # path_sum = ca.sum(path_x**2 + path_y**2 + path_z**2)   
          
 
 
-        cost = snap_integral #+ 1 * path_sum
+        cost = snap_integral
 
         g = []
         lb_vals = []
@@ -113,11 +113,11 @@ class SegmentCasadiSolver:
         g.append(z0dd_error)
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-        # # inequality constraints for jerk
-        # g.append(x0ddd_error)
-        # g.append(y0ddd_error)
-        # g.append(z0ddd_error)
-        # equality_constraints += 12
+        # equality constraints for jerk
+        g.append(x0ddd_error)
+        g.append(y0ddd_error)
+        g.append(z0ddd_error)
+        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
         # End waypoint equality
         xN_error = x[-1] - waypoints[-1,0]
@@ -154,6 +154,12 @@ class SegmentCasadiSolver:
         g.append(xNdd_error)
         g.append(yNdd_error)
         g.append(zNdd_error)
+        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+
+        # equality constraints for acceleration
+        g.append(xNddd_error)
+        g.append(yNddd_error)
+        g.append(zNddd_error)
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
         for i in range(1,self.Nw-1):
@@ -251,8 +257,8 @@ class SegmentCasadiSolver:
         opts = {
             'ipopt.print_level': 0,
             'print_time': 0,
-            'ipopt.max_iter': 50,
-            'ipopt.tol': 1e-4,
+            'ipopt.max_iter': 200,
+            'ipopt.tol': 1e-5,
             'jit': True,
             'compiler': 'shell',
             'jit_options': {
@@ -429,16 +435,27 @@ def generate_trajectory(waypoints, averageSpeed, numSegmentSubsections, ctrl_fre
     desired_derivatives[1:Nw-2,:,:] = np.inf
     desired_derivatives[-1,:,:] = 0
 
-    solver = SegmentCasadiSolver(waypoints,desired_derivatives, waypoint_start_times, 1/30.0, maxSpeed, numSegmentSubsections)
+    solver = SegmentCasadiSolver(waypoints,desired_derivatives, waypoint_start_times, 1/60.0, maxSpeed, numSegmentSubsections)
 
     num_decision_variables = 3 * solver.N
 
     X0 = np.zeros((num_decision_variables,))
     
     A4, B4, C4, solution = solver.solve_coefficients(X0)
+
+    print("A4=",A4)
+    print("B4=",B4)
+    print("C4=",C4)
+
+    print(solution)
+
     A0, A1, A2, A3, A4 = unroll_coefficients(np.array(A4),waypoints[0,0],solver.dts)
     B0, B1, B2, B3, B4 = unroll_coefficients(np.array(B4),waypoints[0,1],solver.dts)
     C0, C1, C2, C3, C4 = unroll_coefficients(np.array(C4),waypoints[0,2],solver.dts)
+
+    print("A4=",A4)
+    print("B4=",B4)
+    print("C4=",C4)
 
     ctrl_dt = 1/ctrl_freq
 

@@ -60,13 +60,17 @@ def generate_waypoints():
 
 def main():
     all_waypoints = generate_waypoints()
-    waypoints = all_waypoints[0:15,:]
+    waypoints = all_waypoints[0:12,:]
    
-    total_time = 30.3
-    discretization_dt = 0.2
+    # total_time = 30.3
+    # discretization_dt = 0.2
+
+    average_speed = 0.5
     ctrl_freq = 60
+
+    numSubsections = 5
     
-    states = generate_trajectory(waypoints, total_time, discretization_dt, ctrl_freq)
+    states, total_duration = generate_trajectory(waypoints, average_speed, numSubsections, ctrl_freq)
 
     ax0 = plt.figure().add_subplot(projection='3d')
 
@@ -76,6 +80,10 @@ def main():
 
     ax0.scatter(wx, wy, wz, marker='o')
     # plot_times = np.ones_like(A0_vals) * plot_dt
+
+    print("states.shape",states.shape)
+    print("total duration", total_duration)
+
     np.savez("test_states.npz", 
              states=states,
              waypoints=waypoints)
@@ -83,6 +91,8 @@ def main():
     x_vals = states[:,0]
     y_vals = states[:,1]
     z_vals = states[:,2]
+    
+    
     ax0.plot(x_vals,y_vals,z_vals)
     ax0.set_xlabel("x")
     ax0.set_ylabel("y")

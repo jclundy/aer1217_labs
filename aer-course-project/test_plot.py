@@ -2,7 +2,8 @@ import casadi as ca
 import numpy as np
 import matplotlib.pyplot as plt
 
-from combined_discretized_casadi_solver import *
+# from combined_discretized_casadi_solver import *
+from fixed_number_of_subections_discretized_solver import *
 
 
 npzfile = np.load("combined_coefficients.npz")
@@ -30,7 +31,9 @@ wx = waypoints[:,0]
 wy = waypoints[:,1]
 wz = waypoints[:,2]
 
-ax0.scatter(wx, wy, wz, marker='o')
+ax0.scatter(wx, wy, wz, marker='^')
+
+# ax0.scatter(A0, B0, C0, marker='^')
 
 # plot trajectory of quadrotor evalutaed at every timestep
 N_segments = A0.shape[0]

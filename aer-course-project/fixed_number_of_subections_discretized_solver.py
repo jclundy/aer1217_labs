@@ -13,23 +13,26 @@ class SegmentCasadiSolver:
         self.maxSpeed = maxSpeed
         self.numSubsections = numSubsections
 
-        # Number of decsion variables is total time / dt
+        # Number of decision variables: number of segments times number of segment subsections
         N = (self.Nw - 1) * numSubsections
 
         print("total_time=",total_time)
         print("N=",N)
         # discretized times
         section_durations = waypoint_start_times[1:] - waypoint_start_times[0:-1]
-        section_dts = section_durations / numSubsections
 
-        self.dts = section_dts
+        section_dts = (section_durations / numSubsections).reshape(-1,1)
+
+        self.dts = (np.ones((self.Nw-1, numSubsections)) * section_dts).reshape(-1,)
+        print("section_dts", section_dts)
+        print("self.dts", self.dts)
 
         self.N = N
         self.A4 = ca.SX.sym('A4', N)
         self.B4 = ca.SX.sym('B4', N)
         self.C4 = ca.SX.sym('C4', N)
 
-        self.max_accel_xy = 2 * maxSpeed / control_dt
+        self.max_accel_xy = (maxSpeed - 0) /( numSubsections * control_dt)
         self.max_accel_z = 0.517
 
         self.min_time = 5
@@ -39,14 +42,27 @@ class SegmentCasadiSolver:
 
         self.max_snap = 2 * self.max_jerk_xy / control_dt
 
+
+        print("self.dts.shape", self.dts.shape)
+        print("self.A4.shape", self.A4.shape)
+
         snap_integral = 24**2 * ca.sum((self.A4 * self.dts)**2) + 24**2 *ca.sum((self.B4 * self.dts)**2) + 24**2 * ca.sum((self.C4 * self.dts)**2)
+
 
 
         A0, A1, A2, A3, A4 = unroll_coefficients(self.A4,waypoints[0,0],self.dts)
         B0, B1, B2, B3, B4 = unroll_coefficients(self.B4,waypoints[0,1],self.dts)
         C0, C1, C2, C3, C4 = unroll_coefficients(self.C4,waypoints[0,2],self.dts)
 
-        cost = snap_integral
+        # path_x = A0 + A1 * self.dts + A2 * self.dts**2 + A3 * self.dts**3 + A4 * self.dts**4
+        # path_y = B0 + B1 * self.dts + B2 * self.dts**2 + B3 * self.dts**3 + B4 * self.dts**4
+        # path_z = C0 + C1 * self.dts + C2 * self.dts**2 + C3 * self.dts**3 + C4 * self.dts**4
+
+        # path_sum = ca.sum(ca.sqrt(path_x**2 + path_y**2 + path_z**2))   
+         
+
+
+        cost = snap_integral #+ 1 * path_sum
 
         g = []
         lb_vals = []
@@ -143,13 +159,13 @@ class SegmentCasadiSolver:
         for i in range(1,self.Nw-1):
             
             index = i * numSubsections - 1
-            waypoint_dt = adjusted_start_times[i] - index * dt
+            waypoint_dt = self.dts[index]
 
             print("Waypoint i=", i)
             print("discretized index=", index)
 
             print("waypoint time:", adjusted_start_times[i])
-            print("polynomial coefficient time:", index * dt)
+            print("polynomial coefficient time:", np.sum(self.dts[0:index]))
             print("waypoint_dt", waypoint_dt)
             print("A0.shape", A0.shape)
 
@@ -435,6 +451,7 @@ def generate_trajectory(waypoints, averageSpeed, numSegmentSubsections, ctrl_fre
              times=solver.dts,
              waypoints=waypoints)
 
+    print("A0.shape",A0.shape)
 
     states = evalute_polynomials_over_control_time_step( solver.dts, ctrl_dt, N_discretized_segments, ctrl_freq, 
                                                                            A0, A1, A2, A3, A4, 

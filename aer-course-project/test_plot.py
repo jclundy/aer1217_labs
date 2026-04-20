@@ -35,7 +35,7 @@ wx = waypoints[:,0]
 wy = waypoints[:,1]
 wz = waypoints[:,2]
 
-ax0.scatter(wx, wy, wz, marker='^')
+ax0.scatter(wx, wy, wz, marker='o')
 
 # ax0.scatter(A0, B0, C0, marker='^')
 
@@ -54,6 +54,13 @@ states = evalute_polynomials_over_control_time_step(plot_times, plot_dt, N_segme
 x_array = states[:,0]
 y_array = states[:,1]
 z_array = states[:,2]
+
+# A0_Vals = np.array([A0[0], A0[21], A0[-1]])
+# B0_Vals = np.array([B0[0], B0[21], B0[-1]])
+# C0_Vals = np.array([C0[0], C0[21], C0[-1]])
+# ax0.scatter(A0_Vals, B0_Vals, C0_Vals, marker='^')
+
+
 
 ax0.plot(x_array,y_array,z_array)
 ax0.set_xlabel("x")

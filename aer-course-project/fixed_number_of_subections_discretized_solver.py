@@ -14,16 +14,29 @@ class SegmentCasadiSolver:
         self.numSubsections = numSubsections
 
         # Number of decision variables: number of segments times number of segment subsections
-        N = (self.Nw - 1) * numSubsections
+        N = (self.Nw - 1) * self.numSubsections
 
         print("total_time=",total_time)
         print("N=",N)
         # discretized times
         section_durations = waypoint_start_times[1:] - waypoint_start_times[0:-1]
-
         section_dts = (section_durations / numSubsections).reshape(-1,1)
-
         self.dts = (np.ones((self.Nw-1, numSubsections)) * section_dts).reshape(-1,)
+
+        # section_dt_0145 = (section_durations * 0.1).reshape(-1,1)
+        # section_dt_23 = (section_durations * 0.3).reshape(-1,1)
+
+        subsection_dts_start = []
+        subsection_dts_end = []
+        # total = 0
+        # multiplier = 1
+        # while(total < 1):
+            
+        
+
+        # section_dts = np.hstack([section_dt_0145,section_dt_0145,section_dt_23, section_dt_23, section_dt_0145, section_dt_0145]).reshape(-1,)
+        # self.dts = section_dts
+
         print("section_dts", section_dts)
         print("self.dts", self.dts)
 
@@ -62,7 +75,6 @@ class SegmentCasadiSolver:
          
 
 
-        cost = snap_integral
 
         g = []
         lb_vals = []
@@ -78,6 +90,8 @@ class SegmentCasadiSolver:
         # velocity and acceleration constraint
         # g.append(ca.sqrt(xd**2 + yd**2 + zd**2))
         # g.append(ca.sqrt(xdd**2 + ydd**2 + zdd**2))
+
+        total_waypoint_error = 0
 
         # Start point equality
         x0_error = x[0] - A0[0]
@@ -101,6 +115,8 @@ class SegmentCasadiSolver:
         g.append(z0_error)
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
+        total_waypoint_error += x0_error**2 + y0_error**2 + z0_error**2
+
         # equality constraint for speed
         g.append(x0d_error)
         g.append(y0d_error)
@@ -123,6 +139,8 @@ class SegmentCasadiSolver:
         xN_error = x[-1] - waypoints[-1,0]
         yN_error = y[-1] - waypoints[-1,1]
         zN_error = z[-1] - waypoints[-1,2]
+
+        total_waypoint_error += xN_error**2 + yN_error**2 + zN_error**2
 
         print("waypoints[-1,:]",waypoints[-1,:])
 
@@ -164,14 +182,19 @@ class SegmentCasadiSolver:
 
         for i in range(1,self.Nw-1):
             
+            print("i=", i)
+            print("numSubsections=", numSubsections)
+
             index = i * numSubsections - 1
+            print("index=", index)
+            print("self.dts.shape=", self.dts.shape)
             waypoint_dt = self.dts[index]
 
             print("Waypoint i=", i)
             print("discretized index=", index)
 
             print("waypoint time:", adjusted_start_times[i])
-            print("polynomial coefficient time:", np.sum(self.dts[0:index]))
+            print("polynomial coefficient time:", np.sum(self.dts[0:index+1]))
             print("waypoint_dt", waypoint_dt)
             print("A0.shape", A0.shape)
 
@@ -190,6 +213,7 @@ class SegmentCasadiSolver:
             C2_i = C2[index]
             C3_i = C3[index]
             C4_i = C4[index]
+
             wp_x, wp_xd, wp_xdd, wp_xddd= compute_state_1d(A0_i,A1_i,A2_i,A3_i,A4_i, waypoint_dt)
             wp_y, wp_yd, wp_ydd, wp_yddd= compute_state_1d(B0_i,B1_i,B2_i,B3_i,B4_i, waypoint_dt)
             wp_z, wp_zd, wp_zdd, wp_zddd= compute_state_1d(C0_i,C1_i,C2_i,C3_i,C4_i, waypoint_dt)
@@ -199,11 +223,57 @@ class SegmentCasadiSolver:
             y_error = wp_y - waypoints[i,1]
             z_error = wp_z - waypoints[i,2]
 
+            total_waypoint_error += x_error**2 + y_error**2 + z_error**2
+
             # equality constraint for waypoint positions
             g.append(x_error)
             g.append(y_error)
             g.append(z_error)
+            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
+
+            A0_i1 = A0[index+1]
+            A1_i1 = A1[index+1]
+            A2_i1 = A2[index+1]
+            A3_i1 = A3[index+1]
+            A4_i1 = A4[index+1]
+            B0_i1 = B0[index+1]
+            B1_i1 = B1[index+1]
+            B2_i1 = B2[index+1]
+            B3_i1 = B3[index+1]
+            B4_i1 = B4[index+1]
+            C0_i1 = C0[index+1]
+            C1_i1 = C1[index+1]
+            C2_i1 = C2[index+1]
+            C3_i1 = C3[index+1]
+            C4_i1 = C4[index+1]
+
+            wp_x1, wp_xd1, wp_xdd1, wp_xddd1= compute_state_1d(A0_i1,A1_i1,A2_i1,A3_i1,A4_i1, 0)
+            wp_y1, wp_yd1, wp_ydd1, wp_yddd1= compute_state_1d(B0_i1,B1_i1,B2_i1,B3_i1,B4_i1, 0)
+            wp_z1, wp_zd1, wp_zdd1, wp_zddd1= compute_state_1d(C0_i1,C1_i1,C2_i1,C3_i1,C4_i1, 0)
+
+            x_error_1 = wp_x1 - waypoints[i,0]
+            y_error_1 = wp_y1 - waypoints[i,1]
+            z_error_1 = wp_z1 - waypoints[i,2]
+
+            g.append(x_error_1)
+            g.append(y_error_1)
+            g.append(z_error_1)
+            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+
+            g.append(wp_xd1 - wp_xd)
+            g.append(wp_yd1 - wp_yd)
+            g.append(wp_zd1 - wp_zd)
+            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+
+            g.append(wp_xdd1 - wp_xdd)
+            g.append(wp_ydd1 - wp_ydd)
+            g.append(wp_zdd1 - wp_zdd)
+            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+
+            g.append(wp_xddd1 - wp_xddd)
+            g.append(wp_yddd1 - wp_yddd)
+            g.append(wp_zddd1 - wp_zddd)
             for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
             g.append(wp_xd)
@@ -230,11 +300,20 @@ class SegmentCasadiSolver:
             ub_vals.append(self.max_accel_xy)
             ub_vals.append(self.max_accel_z)
 
-            # # inequality constraints for jerk
-            # g.append(xNddd_error)
-            # g.append(yNddd_error)
-            # g.append(zNddd_error)
-            # equality_constraints += 12
+            g.append(wp_xddd)
+            g.append(wp_yddd)
+            g.append(wp_zddd)
+
+            lb_vals.append(-self.max_jerk_xy)
+            lb_vals.append(-self.max_jerk_xy)
+            lb_vals.append(-self.max_jerk_xy)
+
+            ub_vals.append(self.max_jerk_xy)
+            ub_vals.append(self.max_jerk_xy)
+            ub_vals.append(self.max_jerk_z)
+
+
+        cost = snap_integral + total_waypoint_error
 
 
         opt_variables = ca.vertcat(
@@ -470,7 +549,7 @@ def generate_trajectory(waypoints, averageSpeed, numSegmentSubsections, ctrl_fre
 
     print("A0.shape",A0.shape)
 
-    states = evalute_polynomials_over_control_time_step( solver.dts, ctrl_dt, N_discretized_segments, ctrl_freq, 
+    states = evalute_polynomials_over_control_time_step( solver.dts, 0.001, N_discretized_segments, ctrl_freq, 
                                                                            A0, A1, A2, A3, A4, 
                                                                            B0, B1, B2, B3, B4, 
                                                                            C0, C1, C2, C3, C4)

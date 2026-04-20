@@ -21,8 +21,8 @@ class SegmentCasadiSolver:
         print("N=",N)
         # discretized times
         self.dts = np.ones((N,1)) * dt
-        last_dt = total_time - (N-1)*dt
-        self.dts[N-1] = last_dt
+        # last_dt = total_time - (N-1)*dt
+        # self.dts[N-1] = last_dt
 
         self.N = N
         self.A4 = ca.SX.sym('A4', N)
@@ -64,21 +64,21 @@ class SegmentCasadiSolver:
         # g.append(ca.sqrt(xdd**2 + ydd**2 + zdd**2))
 
         # Start point equality
-        x0_error = x[0] - A0[0]
-        y0_error = y[0] - B0[0]
-        z0_error = z[0] - C0[0]
+        x0_error = x[0] - waypoints[0,0]
+        y0_error = y[0] - waypoints[0,1]
+        z0_error = z[0] - waypoints[0,2]
 
-        x0d_error = xd[0] - A1[0]
-        y0d_error = yd[0] - B1[0]
-        z0d_error = zd[0] - C1[0]
+        x0d_error = xd[0] - waypoint_derivatives[0,0,0]
+        y0d_error = yd[0] - waypoint_derivatives[0,0,1]
+        z0d_error = zd[0] - waypoint_derivatives[0,0,2]
 
-        x0dd_error = xdd[0] - 2*A2[0]
-        z0dd_error = zdd[0] - 2*B2[0]
-        y0dd_error = ydd[0] - 2*C2[0]
+        x0dd_error = xdd[0] - waypoint_derivatives[0,1,0]
+        z0dd_error = zdd[0] - waypoint_derivatives[0,1,1]
+        y0dd_error = ydd[0] - waypoint_derivatives[0,1,2]
 
-        x0ddd_error = xddd[0] - 6*A3[0]
-        y0ddd_error = yddd[0] - 6*A3[0]
-        z0ddd_error = zddd[0] - 6*A3[0]
+        x0ddd_error = xddd[0] - waypoint_derivatives[0,2,0]
+        y0ddd_error = yddd[0] - waypoint_derivatives[0,2,1]
+        z0ddd_error = zddd[0] - waypoint_derivatives[0,2,2]
 
         g.append(x0_error)
         g.append(y0_error)
@@ -98,35 +98,39 @@ class SegmentCasadiSolver:
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
         # # inequality constraints for jerk
-        # g.append(x0ddd_error)
-        # g.append(y0ddd_error)
-        # g.append(z0ddd_error)
-        # equality_constraints += 12
+        g.append(x0ddd_error)
+        g.append(y0ddd_error)
+        g.append(z0ddd_error)
+        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
         # End waypoint equality
-        xN_error = x[-1] - waypoints[-1,0]
-        yN_error = y[-1] - waypoints[-1,1]
-        zN_error = z[-1] - waypoints[-1,2]
+        final_dt = adjusted_start_times[-1] - N * dt
+        xN, xdN, xddN, xdddN = compute_state_1d(A0[-1],A1[-1],A2[-1],A3[-1],A4[-1], final_dt)
+        yN, ydN, yddN, ydddN = compute_state_1d(B0[-1],B1[-1],B2[-1],B3[-1],B4[-1], final_dt)
+        zN, zdN, zddN, zdddN = compute_state_1d(C0[-1],C1[-1],C2[-1],C3[-1],C4[-1], final_dt)      
+        
+        xN_error = xN - waypoints[self.Nw-1,0]
+        yN_error = yN - waypoints[self.Nw-1,1]
+        zN_error = zN - waypoints[self.Nw-1,2]
 
         print("waypoints[-1,:]",waypoints[-1,:])
 
-        xNd_error = xd[-1] - waypoint_derivatives[-1, 0,0]
-        yNd_error = yd[-1] - waypoint_derivatives[-1, 0,1]
-        zNd_error = zd[-1] - waypoint_derivatives[-1, 0,2]
+        xNd_error = xdN - waypoint_derivatives[self.Nw-1, 0,0]
+        yNd_error = ydN - waypoint_derivatives[self.Nw-1, 0,1]
+        zNd_error = zdN - waypoint_derivatives[self.Nw-1, 0,2]
 
-        xNdd_error = xdd[-1] - waypoint_derivatives[-1, 1,0]
-        yNdd_error = ydd[-1] - waypoint_derivatives[-1, 1,1]
-        zNdd_error = zdd[-1] - waypoint_derivatives[-1, 1,2]
+        xNdd_error = xddN - waypoint_derivatives[self.Nw-1, 1,0]
+        yNdd_error = yddN - waypoint_derivatives[self.Nw-1, 1,1]
+        zNdd_error = zddN - waypoint_derivatives[self.Nw-1, 1,2]
 
-        xNddd_error = xddd[-1] - waypoint_derivatives[-1, 2,0]
-        yNddd_error = yddd[-1] - waypoint_derivatives[-1, 2,1]
-        zNddd_error = zddd[-1] - waypoint_derivatives[-1, 2,2]
+        xNddd_error = xdddN - waypoint_derivatives[self.Nw-1, 2,0]
+        yNddd_error = ydddN - waypoint_derivatives[self.Nw-1, 2,1]
+        zNddd_error = zdddN - waypoint_derivatives[self.Nw-1, 2,2]
 
         g.append(xN_error)
         g.append(yN_error)
         g.append(zN_error)
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
-
 
         # equality constraint for speed
         g.append(xNd_error)
@@ -140,10 +144,17 @@ class SegmentCasadiSolver:
         g.append(zNdd_error)
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
+        # # inequality constraints for jerk
+        g.append(xNddd_error)
+        g.append(yNddd_error)
+        g.append(zNddd_error)
+        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+
+
         for i in range(1,self.Nw-1):
             
             index = np.floor(adjusted_start_times[i] / self.dt).astype(np.int64) - 1
-            waypoint_dt = adjusted_start_times[i] - index * dt
+            waypoint_dt = adjusted_start_times[i] - (index) * dt
 
             print("Waypoint i=", i)
             print("discretized index=", index)
@@ -152,11 +163,6 @@ class SegmentCasadiSolver:
             print("polynomial coefficient time:", index * dt)
             print("waypoint_dt", waypoint_dt)
             print("A0.shape", A0.shape)
-
-            print("last start time / dt",np.floor(adjusted_start_times[-1] / self.dt))
-            print("last start time -1  / dt",np.floor(adjusted_start_times[-2] / self.dt))
-
-
 
             A0_i = A0[index]
             A1_i = A1[index]
@@ -416,7 +422,7 @@ def generate_trajectory(waypoints, averageSpeed, discretization_dt, ctrl_freq):
 
     desired_derivatives = np.zeros((Nw, 3, 3))
     desired_derivatives[1:Nw-2,:,:] = np.inf
-    desired_derivatives[-1,:,:] = 0
+    desired_derivatives[Nw-1,:,:] = 0
 
     solver = SegmentCasadiSolver(waypoints,desired_derivatives, waypoint_start_times, discretization_dt, maxSpeed)
 
@@ -429,7 +435,8 @@ def generate_trajectory(waypoints, averageSpeed, discretization_dt, ctrl_freq):
     B0, B1, B2, B3, B4 = unroll_coefficients(np.array(B4),waypoints[0,1],solver.dts)
     C0, C1, C2, C3, C4 = unroll_coefficients(np.array(C4),waypoints[0,2],solver.dts)
 
-    ctrl_dt = 1/ctrl_freq
+    # ctrl_dt = 1/ctrl_freq
+    ctrl_dt = 0.01
 
     N_discretized_segments = A0.shape[0]
     discretized_durations = np.ones_like(A0) * discretization_dt

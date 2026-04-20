@@ -1,4 +1,4 @@
-use_discretized = True
+use_discretized = False
 if use_discretized:
     from fixed_number_of_subections_discretized_solver import *
 else:
@@ -67,14 +67,14 @@ def main():
    
     # total_time = 30.3
 
-    average_speed = 0.5
-    ctrl_freq = 60
+    average_speed = 0.25
+    ctrl_freq = 200
 
     if use_discretized:
-        numSubsections = 51  
+        numSubsections = 17  
         states, total_duration = generate_trajectory(waypoints, average_speed, numSubsections, ctrl_freq)
     else:
-        discretization_dt = 1/30.0
+        discretization_dt = 1/15.0
         states, total_duration = generate_trajectory(waypoints, average_speed, discretization_dt, ctrl_freq)
 
     ax0 = plt.figure().add_subplot(projection='3d')

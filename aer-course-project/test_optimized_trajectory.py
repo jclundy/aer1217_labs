@@ -1,4 +1,5 @@
-from combined_discretized_casadi_solver import *
+# from combined_discretized_casadi_solver import *
+from fixed_number_of_subections_discretized_solver import *
 
 def generate_waypoints():
     poses = [[-1.,-3.,1.],

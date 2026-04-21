@@ -1,4 +1,4 @@
-use_discretized = False
+use_discretized = True
 if use_discretized:
     from fixed_number_of_subections_discretized_solver import *
 else:
@@ -63,18 +63,18 @@ def generate_waypoints():
 
 def main():
     all_waypoints = generate_waypoints()
-    waypoints = all_waypoints[0:3,:]
+    waypoints = all_waypoints[9:12,:]
    
     # total_time = 30.3
 
-    average_speed = 0.25
-    ctrl_freq = 200
+    average_speed = 0.1
+    ctrl_freq = 60
 
     if use_discretized:
         numSubsections = 17  
         states, total_duration = generate_trajectory(waypoints, average_speed, numSubsections, ctrl_freq)
     else:
-        discretization_dt = 1/15.0
+        discretization_dt = 0.1
         states, total_duration = generate_trajectory(waypoints, average_speed, discretization_dt, ctrl_freq)
 
     ax0 = plt.figure().add_subplot(projection='3d')

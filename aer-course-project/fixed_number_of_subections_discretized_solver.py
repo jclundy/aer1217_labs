@@ -83,9 +83,9 @@ class SegmentCasadiSolver:
         adjusted_start_times = waypoint_start_times - waypoint_start_times[0]
         print("adjusted_start_times.shape", adjusted_start_times.shape)
         print("waypoint_start_times.shape", waypoint_start_times.shape) 
-        x, xd, xdd, xddd = compute_state_1d(A0,A1,A2,A3,A4, self.dts)
-        y, yd, ydd, yddd = compute_state_1d(B0,B1,B2,B3,B4, self.dts)
-        z, zd, zdd, zddd = compute_state_1d(C0,C1,C2,C3,C4, self.dts)
+        # x, xd, xdd, xddd = compute_state_1d(A0,A1,A2,A3,A4, self.dts)
+        # y, yd, ydd, yddd = compute_state_1d(B0,B1,B2,B3,B4, self.dts)
+        # z, zd, zdd, zddd = compute_state_1d(C0,C1,C2,C3,C4, self.dts)
 
         # velocity and acceleration constraint
         # g.append(ca.sqrt(xd**2 + yd**2 + zd**2))
@@ -94,21 +94,25 @@ class SegmentCasadiSolver:
         total_waypoint_error = 0
 
         # Start point equality
-        x0_error = x[0] - A0[0]
-        y0_error = y[0] - B0[0]
-        z0_error = z[0] - C0[0]
+        x0, xd0, xdd0, xddd0 = compute_state_1d(A0[0],A1[0],A2[0],A3[0],A4[0], 0)
+        y0, yd0, ydd0, yddd0 = compute_state_1d(A0[0],A1[0],A2[0],A3[0],A4[0], 0)
+        z0, zd0, zdd0, zddd0 = compute_state_1d(A0[0],A1[0],A2[0],A3[0],A4[0], 0)
 
-        x0d_error = xd[0] - A1[0]
-        y0d_error = yd[0] - B1[0]
-        z0d_error = zd[0] - C1[0]
+        x0_error = x0 - A0[0]
+        y0_error = y0 - B0[0]
+        z0_error = z0 - C0[0]
 
-        x0dd_error = xdd[0] - 2*A2[0]
-        z0dd_error = zdd[0] - 2*B2[0]
-        y0dd_error = ydd[0] - 2*C2[0]
+        x0d_error = xd0 - A1[0]
+        y0d_error = yd0 - B1[0]
+        z0d_error = zd0 - C1[0]
 
-        x0ddd_error = xddd[0] - 6*A3[0]
-        y0ddd_error = yddd[0] - 6*A3[0]
-        z0ddd_error = zddd[0] - 6*A3[0]
+        x0dd_error = xdd0 - 2*A2[0]
+        z0dd_error = zdd0 - 2*B2[0]
+        y0dd_error = ydd0 - 2*C2[0]
+
+        x0ddd_error = xddd0 - 6*A3[0]
+        y0ddd_error = yddd0 - 6*A3[0]
+        z0ddd_error = zddd0 - 6*A3[0]
 
         g.append(x0_error)
         g.append(y0_error)
@@ -136,31 +140,33 @@ class SegmentCasadiSolver:
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
         # End waypoint equality
-        xN_error = x[-1] - waypoints[-1,0]
-        yN_error = y[-1] - waypoints[-1,1]
-        zN_error = z[-1] - waypoints[-1,2]
 
-        total_waypoint_error += xN_error**2 + yN_error**2 + zN_error**2
+        # End waypoint equality
+        final_dt = self.dts[-1]
+        xN, xdN, xddN, xdddN = compute_state_1d(A0[-1],A1[-1],A2[-1],A3[-1],A4[-1], final_dt)
+        yN, ydN, yddN, ydddN = compute_state_1d(B0[-1],B1[-1],B2[-1],B3[-1],B4[-1], final_dt)
+        zN, zdN, zddN, zdddN = compute_state_1d(C0[-1],C1[-1],C2[-1],C3[-1],C4[-1], final_dt)      
+        
+        xN_error = xN - waypoints[self.Nw-1,0]
+        yN_error = yN - waypoints[self.Nw-1,1]
+        zN_error = zN - waypoints[self.Nw-1,2]
 
-        print("waypoints[-1,:]",waypoints[-1,:])
+        xNd_error = xdN - waypoint_derivatives[self.Nw-1, 0,0]
+        yNd_error = ydN - waypoint_derivatives[self.Nw-1, 0,1]
+        zNd_error = zdN - waypoint_derivatives[self.Nw-1, 0,2]
 
-        xNd_error = xd[-1] - waypoint_derivatives[-1, 0,0]
-        yNd_error = yd[-1] - waypoint_derivatives[-1, 0,1]
-        zNd_error = zd[-1] - waypoint_derivatives[-1, 0,2]
+        xNdd_error = xddN - waypoint_derivatives[self.Nw-1, 1,0]
+        yNdd_error = yddN - waypoint_derivatives[self.Nw-1, 1,1]
+        zNdd_error = zddN - waypoint_derivatives[self.Nw-1, 1,2]
 
-        xNdd_error = xdd[-1] - waypoint_derivatives[-1, 1,0]
-        yNdd_error = ydd[-1] - waypoint_derivatives[-1, 1,1]
-        zNdd_error = zdd[-1] - waypoint_derivatives[-1, 1,2]
-
-        xNddd_error = xddd[-1] - waypoint_derivatives[-1, 2,0]
-        yNddd_error = yddd[-1] - waypoint_derivatives[-1, 2,1]
-        zNddd_error = zddd[-1] - waypoint_derivatives[-1, 2,2]
+        xNddd_error = xdddN - waypoint_derivatives[self.Nw-1, 2,0]
+        yNddd_error = ydddN - waypoint_derivatives[self.Nw-1, 2,1]
+        zNddd_error = zdddN - waypoint_derivatives[self.Nw-1, 2,2]
 
         g.append(xN_error)
         g.append(yN_error)
         g.append(zN_error)
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
-
 
         # equality constraint for speed
         g.append(xNd_error)
@@ -174,7 +180,7 @@ class SegmentCasadiSolver:
         g.append(zNdd_error)
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-        # equality constraints for acceleration
+        # # inequality constraints for jerk
         g.append(xNddd_error)
         g.append(yNddd_error)
         g.append(zNddd_error)
@@ -198,38 +204,38 @@ class SegmentCasadiSolver:
             print("waypoint_dt", waypoint_dt)
             print("A0.shape", A0.shape)
 
-            A0_i = A0[index]
-            A1_i = A1[index]
-            A2_i = A2[index]
-            A3_i = A3[index]
-            A4_i = A4[index]
-            B0_i = B0[index]
-            B1_i = B1[index]
-            B2_i = B2[index]
-            B3_i = B3[index]
-            B4_i = B4[index]
-            C0_i = C0[index]
-            C1_i = C1[index]
-            C2_i = C2[index]
-            C3_i = C3[index]
-            C4_i = C4[index]
+            # A0_i = A0[index]
+            # A1_i = A1[index]
+            # A2_i = A2[index]
+            # A3_i = A3[index]
+            # A4_i = A4[index]
+            # B0_i = B0[index]
+            # B1_i = B1[index]
+            # B2_i = B2[index]
+            # B3_i = B3[index]
+            # B4_i = B4[index]
+            # C0_i = C0[index]
+            # C1_i = C1[index]
+            # C2_i = C2[index]
+            # C3_i = C3[index]
+            # C4_i = C4[index]
 
-            wp_x, wp_xd, wp_xdd, wp_xddd= compute_state_1d(A0_i,A1_i,A2_i,A3_i,A4_i, waypoint_dt)
-            wp_y, wp_yd, wp_ydd, wp_yddd= compute_state_1d(B0_i,B1_i,B2_i,B3_i,B4_i, waypoint_dt)
-            wp_z, wp_zd, wp_zdd, wp_zddd= compute_state_1d(C0_i,C1_i,C2_i,C3_i,C4_i, waypoint_dt)
+            # wp_x, wp_xd, wp_xdd, wp_xddd= compute_state_1d(A0_i,A1_i,A2_i,A3_i,A4_i, waypoint_dt)
+            # wp_y, wp_yd, wp_ydd, wp_yddd= compute_state_1d(B0_i,B1_i,B2_i,B3_i,B4_i, waypoint_dt)
+            # wp_z, wp_zd, wp_zdd, wp_zddd= compute_state_1d(C0_i,C1_i,C2_i,C3_i,C4_i, waypoint_dt)
             
 
-            x_error = wp_x - waypoints[i,0]
-            y_error = wp_y - waypoints[i,1]
-            z_error = wp_z - waypoints[i,2]
+            # x_error = wp_x - waypoints[i,0]
+            # y_error = wp_y - waypoints[i,1]
+            # z_error = wp_z - waypoints[i,2]
 
-            total_waypoint_error += x_error**2 + y_error**2 + z_error**2
+            # total_waypoint_error += x_error**2 + y_error**2 + z_error**2
 
-            # equality constraint for waypoint positions
-            g.append(x_error)
-            g.append(y_error)
-            g.append(z_error)
-            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+            # # equality constraint for waypoint positions
+            # g.append(x_error)
+            # g.append(y_error)
+            # g.append(z_error)
+            # for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
 
             A0_i1 = A0[index+1]
@@ -261,24 +267,24 @@ class SegmentCasadiSolver:
             g.append(z_error_1)
             for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-            g.append(wp_xd1 - wp_xd)
-            g.append(wp_yd1 - wp_yd)
-            g.append(wp_zd1 - wp_zd)
-            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+            # g.append(wp_xd1 - wp_xd)
+            # g.append(wp_yd1 - wp_yd)
+            # g.append(wp_zd1 - wp_zd)
+            # for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-            g.append(wp_xdd1 - wp_xdd)
-            g.append(wp_ydd1 - wp_ydd)
-            g.append(wp_zdd1 - wp_zdd)
-            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+            # g.append(wp_xdd1 - wp_xdd)
+            # g.append(wp_ydd1 - wp_ydd)
+            # g.append(wp_zdd1 - wp_zdd)
+            # for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-            g.append(wp_xddd1 - wp_xddd)
-            g.append(wp_yddd1 - wp_yddd)
-            g.append(wp_zddd1 - wp_zddd)
-            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+            # g.append(wp_xddd1 - wp_xddd)
+            # g.append(wp_yddd1 - wp_yddd)
+            # g.append(wp_zddd1 - wp_zddd)
+            # for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-            g.append(wp_xd)
-            g.append(wp_yd)
-            g.append(wp_zd)           
+            g.append(wp_xd1)
+            g.append(wp_yd1)
+            g.append(wp_zd1)           
 
             lb_vals.append(-self.maxSpeed)
             lb_vals.append(-self.maxSpeed)
@@ -288,9 +294,9 @@ class SegmentCasadiSolver:
             ub_vals.append(self.maxSpeed)
             ub_vals.append(self.maxSpeed)
 
-            g.append(wp_xdd)
-            g.append(wp_ydd)
-            g.append(wp_zdd)           
+            g.append(wp_xdd1)
+            g.append(wp_ydd1)
+            g.append(wp_zdd1)           
 
             lb_vals.append(-self.max_accel_xy)
             lb_vals.append(-self.max_accel_xy)
@@ -300,9 +306,9 @@ class SegmentCasadiSolver:
             ub_vals.append(self.max_accel_xy)
             ub_vals.append(self.max_accel_z)
 
-            g.append(wp_xddd)
-            g.append(wp_yddd)
-            g.append(wp_zddd)
+            g.append(wp_xddd1)
+            g.append(wp_yddd1)
+            g.append(wp_zddd1)
 
             lb_vals.append(-self.max_jerk_xy)
             lb_vals.append(-self.max_jerk_xy)
@@ -313,7 +319,7 @@ class SegmentCasadiSolver:
             ub_vals.append(self.max_jerk_z)
 
 
-        cost = snap_integral + total_waypoint_error
+        cost = snap_integral # + total_waypoint_error
 
 
         opt_variables = ca.vertcat(

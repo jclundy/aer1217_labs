@@ -151,16 +151,6 @@ class Controller():
                     trimed.append(a)
             return trimed
 
-        full_path, keypts = path(GATE_ORDER)
-        if(use_interpolation):
-            trimed_full_path = remove_duplicates(full_path)
-            dense_path = interpolate_path(trimed_full_path, points_per_metre=5)
-            trimed_full_dense_path = remove_duplicates(full_path)
-            self.waypoints = np.array(trimed_full_dense_path)
-        else:
-            trimed_full_path = remove_duplicates(full_path)
-            self.waypoints = np.array(trimed_full_path)
-
         # ref_state = hardcoded_trajectory_generator(
         #     self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
         #     waypoints=self.waypoints
@@ -170,19 +160,33 @@ class Controller():
 
         ref_state = None
         save_file = "test_states.npz" # "trajectory_states.npz"
-        recompute_trajectory = False
-        # if(os.path.exists(save_file) and not recompute_trajectory):
-        #     print("loading saved trajectory")
-        #     npzfile = np.load(save_file)
-        #     ref_state = npzfile["ref_state"]
-        # else:
-        print("generating minimum-snap trajectory")
-        waypointsPerGroup = 5
-        ref_state, total_time = generate_trajectory(self.waypoints, averageSpeed, discretization_dt, self.CTRL_FREQ, waypointsPerGroup)
-        # ref_state, total_time = generate_trajectory(self.waypoints, averageSpeed, discretization_dt, self.CTRL_FREQ)
-        self.total_duration = total_time
+        recompute_trajectory = True
+        if(os.path.exists(save_file) and not recompute_trajectory):
+            print("loading saved trajectory")
+            npzfile = np.load(save_file)
+            ref_state = npzfile["ref_state"]
+            total_time = npzfile["total_time"]
+            self.waypoints = npzfile["waypoints"]
+        else:
+            print("planning path")
 
-        np.savez(save_file, ref_state=ref_state)
+            full_path, keypts = path(GATE_ORDER)
+            if(use_interpolation):
+                trimed_full_path = remove_duplicates(full_path)
+                dense_path = interpolate_path(trimed_full_path, points_per_metre=5)
+                trimed_full_dense_path = remove_duplicates(full_path)
+                self.waypoints = np.array(trimed_full_dense_path)
+            else:
+                trimed_full_path = remove_duplicates(full_path)
+                self.waypoints = np.array(trimed_full_path)
+            print("generating minimum-snap trajectory")
+
+            waypointsPerGroup = 5
+            ref_state, total_time = generate_trajectory(self.waypoints, averageSpeed, discretization_dt, self.CTRL_FREQ, waypointsPerGroup)
+            # ref_state, total_time = generate_trajectory(self.waypoints, averageSpeed, discretization_dt, self.CTRL_FREQ)
+            np.savez(save_file, ref_state=ref_state, total_time=total_time, waypoints=self.waypoints)
+
+        self.total_duration = total_time
 
         print("ref_state.shape", ref_state.shape)
 
@@ -219,10 +223,14 @@ class Controller():
         #########################
         # REPLACE THIS (START) ##
         #########################
+        stop_iteration = (self.total_duration+3)*self.CTRL_FREQ
+        land_iteration = (self.total_duration+6)*self.CTRL_FREQ
+        end_iteration =  (self.total_duration+7)*self.CTRL_FREQ
+
         if iteration == 0:
             command_type, args = Command(2), [1, 2]  # takeoff
 
-        elif iteration >= 3*self.CTRL_FREQ and iteration < (self.total_duration+3)*self.CTRL_FREQ:
+        elif iteration >= 3*self.CTRL_FREQ and iteration < stop_iteration:
             step = min(iteration - 3*self.CTRL_FREQ, len(self.ref_x)-1)
             command_type = Command(1)  # cmdFullState
             print("sending command full state")
@@ -237,19 +245,16 @@ class Controller():
                     self.ref_euler[step, 2],
                     self.ref_euler_rates[step]]
 
-        elif iteration == (self.total_duration+3)*self.CTRL_FREQ:
+        elif iteration >= stop_iteration and iteration < land_iteration:
             command_type, args = Command(6), []  # notify setpoint stop
+            print("sending setpoint stop")
 
-        elif iteration == (self.total_duration+3)*self.CTRL_FREQ + 1:
-            command_type = Command(5)  # goTo
-            args = [[self.ref_x[-1], self.ref_y[-1], 1.0], 0., 2.5, False]
-
-        elif iteration == (self.total_duration+6)*self.CTRL_FREQ:
+        elif iteration >= land_iteration and iteration < end_iteration:
+            print("sending land command")
             command_type, args = Command(3), [0., 3]  # land
-
-        elif iteration == (self.total_duration+9)*self.CTRL_FREQ:
-            command_type, args = Command(4), []  # stop
-
+        elif iteration >= end_iteration:
+            print("sending exit command")
+            command_type, args = Command(-1), []  # exit
         else:
             command_type, args = Command(0), []
         #########################

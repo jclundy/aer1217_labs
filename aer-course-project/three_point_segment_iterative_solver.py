@@ -119,7 +119,7 @@ class SegmentCasadiSolver:
         g.append(zN_error)
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-        if (np.isfinite(segmentEndDerivatives[0:2,0:2]).all()):
+        if (np.isfinite(segmentEndDerivatives).all()):
             print("applying endpoint derivative condition")
             xNd_error = xdN - segmentEndDerivatives[0,0]
             yNd_error = ydN - segmentEndDerivatives[0,1]
@@ -458,7 +458,7 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
 
     print("*************************************************")
 
-    numWaypointsPerGroup = 5
+    numWaypointsPerGroup = 7
 
     num3Groups = np.floor((Nw - 1)/(numWaypointsPerGroup-1)).astype(np.uint32)
 
@@ -473,27 +473,29 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
         print("segmentEndIdx ", segmentEndIdx)
 
 
-        if(segmentEndIdx < Nw-2):
-            # nextGroupWaypoint = waypoints[segmentEndIdx+1,:]
-            # delta = (waypoints[segmentEndIdx+1,:] - waypoints[segmentEndIdx,:])
-            # endVel = delta/np.linalg.norm(delta) * averageSpeed
-            segmentEndDerivatives = np.ones((3,3)) * np.inf
-            # segmentEndDerivatives[0,:] = endVel
-        elif(segmentEndIdx < Nw ):
-            print("sending trajectory endpoint velocity to zero")
-            segmentEndDerivatives[:,:] = 0
+        # if(segmentEndIdx < Nw-numWaypointsPerGroup):
+        #     nextGroupWaypoint = waypoints[segmentEndIdx+1,:]
+        #     # delta = (waypoints[segmentEndIdx+1,:] - waypoints[segmentEndIdx,:])
+        #     # endVel = delta/np.linalg.norm(delta) * averageSpeed
+        #     segmentEndDerivatives = np.ones((3,3)) * np.inf
+        #     # segmentEndDerivatives[0,:] = endVel
+        # else:
+        #     print("sending trajectory endpoint velocity to zero")
+        if(groupIdx == num3Groups-1):
+            print("setting trajectory endpoint velocity to zero")
+            segmentStartDerivatives = np.zeros((3,3))
 
         segment_waypoints = waypoints[segmentStartIdx:segmentEndIdx+1,:]
 
-        # groupDuration = np.sum(segment_durations[segmentStartIdx:segmentEndIdx])
+        groupDuration = np.sum(segment_durations[segmentStartIdx:segmentEndIdx])
 
         print("duration i", segment_durations[segmentStartIdx])
         print("duration i+1", segment_durations[segmentStartIdx])
-        groupDuration = segment_durations[segmentStartIdx] + segment_durations[segmentStartIdx+1]
+        # groupDuration = segment_durations[segmentStartIdx] + segment_durations[segmentStartIdx+1]
 
         segment_waypoint_start_times = waypoint_start_times[segmentStartIdx:segmentEndIdx+1]
 
-        discretization_dt = groupDuration / numSubsections
+        discretization_dt = groupDuration / (2*numSubsections)
 
         print("solving group ", groupIdx)
         print("segmentStartIdx ", segmentStartIdx)
@@ -503,6 +505,8 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
         print("discretization_dt ", discretization_dt)
         print("segment_waypoints.shape ", segment_waypoints.shape)
         print("segment_waypoint_start_times.shape ", segment_waypoint_start_times.shape)
+        print("segment_waypoints ", segment_waypoints)
+        print("segment_waypoint_start_times ", segment_waypoint_start_times)
 
         solver = SegmentCasadiSolver(segment_waypoints,segmentStartDerivatives, segmentEndDerivatives, segment_waypoint_start_times, discretization_dt, maxSpeed)
 
@@ -514,6 +518,9 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
         A0_i, A1_i, A2_i, A3_i, _ = unroll_coefficients(np.array(A4_i),segment_waypoints[0,0],solver.dts)
         B0_i, B1_i, B2_i, B3_i, _ = unroll_coefficients(np.array(B4_i),segment_waypoints[0,1],solver.dts)
         C0_i, C1_i, C2_i, C3_i, _ = unroll_coefficients(np.array(C4_i),segment_waypoints[0,2],solver.dts)
+
+        print("A0_i", A0_i)
+        print("solver.dts", solver.dts)
 
         A0 = np.concatenate([A0, np.array(A0_i).flatten()])
         B0 = np.concatenate([B0, np.array(B0_i).flatten()])

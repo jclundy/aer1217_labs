@@ -1,10 +1,11 @@
-use_discretized = True
+# use_discretized = False
 # if use_discretized:
 #     from fixed_number_of_subections_discretized_solver import *
 # else:
 #     from combined_discretized_casadi_solver import *
 
 from three_point_segment_iterative_solver import *
+use_discretized = True
 
 def generate_waypoints():
     poses = [[-1.,-3.,1.],
@@ -65,11 +66,11 @@ def generate_waypoints():
 
 def main():
     all_waypoints = generate_waypoints()
-    waypoints = all_waypoints
+    waypoints = all_waypoints[0:12,:]
    
     # total_time = 30.3
 
-    average_speed = 0.1
+    average_speed = 0.75
     ctrl_freq = 60
 
     if use_discretized:

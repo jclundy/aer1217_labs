@@ -428,7 +428,7 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numW
     total_time = total_length / averageSpeed
     segment_durations = waypoint_min_lengths / total_length * total_time
 
-    maxSpeed = 4 *averageSpeed
+    maxSpeed = 1.2 *averageSpeed
 
     waypoint_start_times = np.zeros((Nw,))
     for i in range(0,segment_durations.size):

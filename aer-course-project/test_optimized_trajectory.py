@@ -66,7 +66,7 @@ def generate_waypoints():
 
 def main():
     all_waypoints = generate_waypoints()
-    waypoints = all_waypoints[0:12,:]
+    waypoints = all_waypoints
    
     # total_time = 30.3
 
@@ -74,9 +74,9 @@ def main():
     ctrl_freq = 60
 
     if use_discretized:
-        numSubsections = 11
-        waypointsPerGroup = 5
-        states, total_duration = generate_trajectory(waypoints, average_speed, numSubsections, ctrl_freq, waypointsPerGroup)
+        discretization_dt = 0.1
+        waypointsPerGroup = 7
+        states, total_duration = generate_trajectory(waypoints, average_speed, discretization_dt, ctrl_freq, waypointsPerGroup, usePlot = True)
     else:
         discretization_dt = 0.1
         states, total_duration = generate_trajectory(waypoints, average_speed, discretization_dt, ctrl_freq)

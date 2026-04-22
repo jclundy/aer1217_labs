@@ -30,12 +30,12 @@ class SegmentCasadiSolver:
         self.C4 = ca.SX.sym('C4', N)
 
         self.max_accel_xy = maxSpeed / 4
-        self.max_accel_z = maxSpeed / 4
+        self.max_accel_z = maxSpeed * 0.2 / 4
 
-        self.max_jerk_xy = self.max_accel_xy / 4
-        self.max_jerk_z = self.max_accel_z / 4
+        self.max_jerk_xy = self.max_accel_xy / dt
+        self.max_jerk_z = self.max_accel_z / dt
 
-        self.max_snap = self.max_jerk_xy / 4
+        self.max_snap = self.max_jerk_xy / dt
 
         snap_integral = 24**2 * ca.sum((self.A4 * self.dts)**2) + 24**2 *ca.sum((self.B4 * self.dts)**2) + 24**2 * ca.sum((self.C4 * self.dts)**2)
 
@@ -58,12 +58,14 @@ class SegmentCasadiSolver:
         z, zd, zdd, zddd = compute_state_1d(C0,C1,C2,C3,C4, self.dts)
 
         # velocity and acceleration constraint
-        # g.append(ca.sqrt(xd**2 + yd**2 + zd**2))
-        # for j in range(0,3): lb_vals.append(0); ub_vals.append(self.maxSpeed)
+        # g.append(ca.sqrt(xd**2 + yd**2 + zd**2).max())
+        # lb_vals.append(0); ub_vals.append(self.maxSpeed)
+        
         # g.append(ca.sqrt(xdd**2 + ydd**2 + zdd**2))
-        # for j in range(0,3): lb_vals.append(0); ub_vals.append(self.max_accel_xy)
+        # lb_vals.append(0); ub_vals.append(self.max_accel_xy)
+        
         # g.append(ca.sqrt(xddd**2 + yddd**2 + zddd**2))
-        # for j in range(0,3): lb_vals.append(0); ub_vals.append(self.max_jerk_xy)
+        # lb_vals.append(0); ub_vals.append(self.max_jerk_xy)
 
         # Start point equality
         x0_error = x[0] - waypoints[0,0]
@@ -106,8 +108,8 @@ class SegmentCasadiSolver:
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
         # End waypoint equality
-        # final_dt = adjusted_start_times[-1] - N * dt
-        final_dt = self.dts[-1]
+        final_dt = adjusted_start_times[-1] - N * dt
+        # final_dt = self.dts[-1]
         xN, xdN, xddN, xdddN = compute_state_1d(A0[-1],A1[-1],A2[-1],A3[-1],A4[-1], final_dt)
         yN, ydN, yddN, ydddN = compute_state_1d(B0[-1],B1[-1],B2[-1],B3[-1],B4[-1], final_dt)
         zN, zdN, zddN, zdddN = compute_state_1d(C0[-1],C1[-1],C2[-1],C3[-1],C4[-1], final_dt)      
@@ -180,7 +182,8 @@ class SegmentCasadiSolver:
             index = np.floor(adjusted_start_times[i] / self.dt).astype(np.int64) - 1
             if(index < 0):
                 index = 0
-            waypoint_dt = self.dts[index]
+            # waypoint_dt = self.dts[index]
+            waypoint_dt = adjusted_start_times[i] - (index) * dt
 
             print("Waypoint i=", i)
             print("discretized index=", index)
@@ -419,7 +422,7 @@ def evalute_polynomials_over_control_time_step(times, n, freq, A0, A1, A2, A3, A
 
     return states
 
-def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numWaypointsPerGroup, usePlot = False):
+def generate_trajectory(waypoints, averageSpeed, discretization_dt, ctrl_freq, numWaypointsPerGroup, usePlot = False):
     print("waypoints.shape=", waypoints.shape)
 
     Nw = waypoints.shape[0]
@@ -515,10 +518,10 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numW
             print("setting trajectory endpoint velocity to zero")
             segmentEndDerivatives = np.zeros((3,3))
         else:
-            delta = (waypoints[segmentEndIdx+1,:] - waypoints[segmentEndIdx,:])
-            endVel = delta/np.linalg.norm(delta) * averageSpeed
+            # delta = (waypoints[segmentEndIdx+1,:] - waypoints[segmentEndIdx,:])
+            # endVel = delta/np.linalg.norm(delta) * averageSpeed
             segmentEndDerivatives = np.ones((3,3)) * np.inf
-            segmentEndDerivatives[0,:] = endVel
+            # segmentEndDerivatives[0,:] = endVel
             # segmentEndDerivatives  = np.ones((3,3)) * np.inf
 
 
@@ -533,8 +536,6 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numW
         segment_waypoint_start_times = waypoint_start_times[segmentStartIdx:segmentEndIdx+1]
 
         # discretization_dt = groupDuration / (numSegmentsInGroup*numSubsections)
-        discretization_dt = 0.1
-
         print("solving group ", groupIdx)
         print("segmentStartIdx ", segmentStartIdx)
         print("segmentEndIdx ", segmentEndIdx)

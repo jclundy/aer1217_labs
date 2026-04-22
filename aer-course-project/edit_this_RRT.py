@@ -163,7 +163,7 @@ class Controller():
         #     self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
         #     waypoints=self.waypoints
         # )
-        discretization_dt = 0.25
+        discretization_dt = 0.05
         averageSpeed = 0.5 #20 cm /s
 
         ref_state = None
@@ -175,9 +175,8 @@ class Controller():
         #     ref_state = npzfile["ref_state"]
         # else:
         print("generating minimum-snap trajectory")
-        segmentSubsections = 11
         waypointsPerGroup = 5
-        ref_state, total_time = generate_trajectory(self.waypoints, averageSpeed, segmentSubsections, self.CTRL_FREQ, waypointsPerGroup)
+        ref_state, total_time = generate_trajectory(self.waypoints, averageSpeed, discretization_dt, self.CTRL_FREQ, waypointsPerGroup)
         # ref_state, total_time = generate_trajectory(self.waypoints, averageSpeed, discretization_dt, self.CTRL_FREQ)
         self.total_duration = total_time
 

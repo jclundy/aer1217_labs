@@ -496,7 +496,7 @@ class SegmentCasadiSolver:
         self.max_jerk_xy = self.max_accel_xy / dt
         self.max_jerk_z = self.max_accel_z / dt
 
-        self.max_snap = self.max_jerk_xy / dt
+        # self.max_snap = self.max_jerk_xy / dt
 
         snap_integral = 24**2 * ca.sum2(ca.sum1((self.A4 * self.dts)**2)) + 24**2 * ca.sum2(ca.sum1((self.B4 * self.dts)**2)) + 24**2 * ca.sum2(ca.sum1((self.C4 * self.dts)**2))
 

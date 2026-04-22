@@ -30,8 +30,7 @@ import numpy as np
 from collections import deque
 
 from example_custom_utils import gate_normal, gate_via_points, path, generate_trajectory
-# from rrt_star import path
-from trajectory_generators import hardcoded_trajectory_generator
+
 try:
     from project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory
 except ImportError:
@@ -117,7 +116,7 @@ class Controller():
         plot_trajectory(t_scaled, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
 
         # Draw the trajectory on PyBullet's GUI.
-        draw_trajectory(initial_info, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
+        #draw_trajectory(initial_info, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
 
 
     def planning(self, use_firmware, initial_info):
@@ -149,6 +148,7 @@ class Controller():
                     continue
                 else:
                     trimed.append(a)
+            trimed.append(path[-1])
             return trimed
 
         # ref_state = hardcoded_trajectory_generator(
@@ -226,15 +226,17 @@ class Controller():
         landDuration = 4
         takeOffTime  = 4
 
-        stop_iteration = (self.total_duration+3)*self.CTRL_FREQ
-        land_iteration = (self.total_duration+6)*self.CTRL_FREQ
-        end_iteration =  (self.total_duration+landDuration)*self.CTRL_FREQ
+        initial_stop_iteration = (self.total_duration+takeOffTime)*self.CTRL_FREQ
+        stop_iteration = initial_stop_iteration + 2*self.CTRL_FREQ
+
+        land_iteration = stop_iteration + 1 * self.CTRL_FREQ
+        end_iteration =  land_iteration +  landDuration*self.CTRL_FREQ
 
 
         if iteration == 0:
             command_type, args = Command(2), [1, takeOffTime]  # takeoff
 
-        elif iteration >= takeOffTime*self.CTRL_FREQ and iteration < stop_iteration:
+        elif iteration >= takeOffTime*self.CTRL_FREQ and iteration < initial_stop_iteration:
             step = min(iteration - takeOffTime*self.CTRL_FREQ, len(self.ref_x)-1)
             command_type = Command(1)  # cmdFullState
             print("sending command full state")
@@ -248,7 +250,14 @@ class Controller():
                     self.ref_acc[step].flatten(),
                     self.ref_euler[step, 2],
                     self.ref_euler_rates[step]]
-
+        elif iteration >= initial_stop_iteration and iteration < stop_iteration:
+            command_type = Command(1)  # cmdFullState
+            print("sending command full state, zero derivatives")
+            args = [np.array([self.ref_x[-1], self.ref_y[-1], self.ref_z[-1]]),
+                    np.zeros((3,)),
+                    np.zeros((3,)),
+                    0.0,
+                    np.zeros((3,))]
         elif iteration >= stop_iteration and iteration < land_iteration:
             command_type, args = Command(6), []  # notify setpoint stop
             print("sending setpoint stop")

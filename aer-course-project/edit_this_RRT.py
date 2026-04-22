@@ -29,7 +29,7 @@ Tips:
 import numpy as np
 from collections import deque
 
-from example_custom_utils import gate_normal, gate_via_points, RRTStar
+from example_custom_utils import gate_normal, gate_via_points, RRTStar, generate_trajectory
 from rrt_star import path
 from trajectory_generators import hardcoded_trajectory_generator
 try:
@@ -38,7 +38,7 @@ except ImportError:
     # PyTest import.
     from .project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory
 
-from piecewise_trajectory_solver import generate_trajectory
+# from piecewise_trajectory_solver import generate_trajectory
 # from combined_discretized_casadi_solver import generate_trajectory
 import os
 #########################
@@ -156,7 +156,7 @@ class Controller():
         #     waypoints=self.waypoints
         # )
         discretization_dt = 0.1
-        averageSpeed = 0.5 #20 cm /s
+        averageSpeed = 0.4 #20 cm /s
 
         ref_state = None
         save_file = "test_states.npz" # "trajectory_states.npz"
@@ -236,9 +236,9 @@ class Controller():
             print("sending command full state")
             print("step=",step)
             # print("step=",step)
-            print("ref pos", self.ref_x[step],self.ref_z[step],self.ref_y[step])
-            print("ref vel", self.ref_vel[step].flatten())
-            print("ref acc", self.ref_acc[step].flatten())
+            # print("ref pos", self.ref_x[step],self.ref_z[step],self.ref_y[step])
+            # print("ref vel", self.ref_vel[step].flatten())
+            # print("ref acc", self.ref_acc[step].flatten())
             args = [np.array([self.ref_x[step], self.ref_y[step], self.ref_z[step]]),
                     self.ref_vel[step].flatten(),
                     self.ref_acc[step].flatten(),

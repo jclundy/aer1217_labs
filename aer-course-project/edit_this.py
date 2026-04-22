@@ -262,7 +262,7 @@ class Controller():
             command_type, args = Command(6), []  # notify setpoint stop
             print("sending setpoint stop")
 
-        elif iteration >= land_iteration and iteration < end_iteration:
+        elif iteration >= land_iteration and iteration < land_iteration + 1:
             print("sending land command")
             command_type, args = Command(3), [0., landDuration]  # land
         elif iteration >= end_iteration:

@@ -94,9 +94,9 @@ class SegmentCasadiSolver:
         total_waypoint_error = 0
 
         # Start point equality
-        x0, xd0, xdd0, xddd0 = compute_state_1d(A0[0],A1[0],A2[0],A3[0],A4[0], 0)
-        y0, yd0, ydd0, yddd0 = compute_state_1d(A0[0],A1[0],A2[0],A3[0],A4[0], 0)
-        z0, zd0, zdd0, zddd0 = compute_state_1d(A0[0],A1[0],A2[0],A3[0],A4[0], 0)
+        x0, xd0, xdd0, xddd0, _ = compute_state_1d(A0[0],A1[0],A2[0],A3[0],A4[0], 0)
+        y0, yd0, ydd0, yddd0, _ = compute_state_1d(A0[0],A1[0],A2[0],A3[0],A4[0], 0)
+        z0, zd0, zdd0, zddd0, _ = compute_state_1d(A0[0],A1[0],A2[0],A3[0],A4[0], 0)
 
         x0_error = x0 - A0[0]
         y0_error = y0 - B0[0]
@@ -143,9 +143,9 @@ class SegmentCasadiSolver:
 
         # End waypoint equality
         final_dt = self.dts[-1]
-        xN, xdN, xddN, xdddN = compute_state_1d(A0[-1],A1[-1],A2[-1],A3[-1],A4[-1], final_dt)
-        yN, ydN, yddN, ydddN = compute_state_1d(B0[-1],B1[-1],B2[-1],B3[-1],B4[-1], final_dt)
-        zN, zdN, zddN, zdddN = compute_state_1d(C0[-1],C1[-1],C2[-1],C3[-1],C4[-1], final_dt)      
+        xN, xdN, xddN, xdddN, _ = compute_state_1d(A0[-1],A1[-1],A2[-1],A3[-1],A4[-1], final_dt)
+        yN, ydN, yddN, ydddN, _ = compute_state_1d(B0[-1],B1[-1],B2[-1],B3[-1],B4[-1], final_dt)
+        zN, zdN, zddN, zdddN, _ = compute_state_1d(C0[-1],C1[-1],C2[-1],C3[-1],C4[-1], final_dt)      
         
         xN_error = xN - waypoints[self.Nw-1,0]
         yN_error = yN - waypoints[self.Nw-1,1]
@@ -204,68 +204,68 @@ class SegmentCasadiSolver:
             print("waypoint_dt", waypoint_dt)
             print("A0.shape", A0.shape)
 
-            # A0_i = A0[index]
-            # A1_i = A1[index]
-            # A2_i = A2[index]
-            # A3_i = A3[index]
-            # A4_i = A4[index]
-            # B0_i = B0[index]
-            # B1_i = B1[index]
-            # B2_i = B2[index]
-            # B3_i = B3[index]
-            # B4_i = B4[index]
-            # C0_i = C0[index]
-            # C1_i = C1[index]
-            # C2_i = C2[index]
-            # C3_i = C3[index]
-            # C4_i = C4[index]
+            A0_i = A0[index]
+            A1_i = A1[index]
+            A2_i = A2[index]
+            A3_i = A3[index]
+            A4_i = A4[index]
+            B0_i = B0[index]
+            B1_i = B1[index]
+            B2_i = B2[index]
+            B3_i = B3[index]
+            B4_i = B4[index]
+            C0_i = C0[index]
+            C1_i = C1[index]
+            C2_i = C2[index]
+            C3_i = C3[index]
+            C4_i = C4[index]
 
-            # wp_x, wp_xd, wp_xdd, wp_xddd= compute_state_1d(A0_i,A1_i,A2_i,A3_i,A4_i, waypoint_dt)
-            # wp_y, wp_yd, wp_ydd, wp_yddd= compute_state_1d(B0_i,B1_i,B2_i,B3_i,B4_i, waypoint_dt)
-            # wp_z, wp_zd, wp_zdd, wp_zddd= compute_state_1d(C0_i,C1_i,C2_i,C3_i,C4_i, waypoint_dt)
+            wp_x, wp_xd, wp_xdd, wp_xddd, wpx4 = compute_state_1d(A0_i,A1_i,A2_i,A3_i,A4_i, waypoint_dt)
+            wp_y, wp_yd, wp_ydd, wp_yddd, wpy4= compute_state_1d(B0_i,B1_i,B2_i,B3_i,B4_i, waypoint_dt)
+            wp_z, wp_zd, wp_zdd, wp_zddd, wpz4= compute_state_1d(C0_i,C1_i,C2_i,C3_i,C4_i, waypoint_dt)
             
 
-            # x_error = wp_x - waypoints[i,0]
-            # y_error = wp_y - waypoints[i,1]
-            # z_error = wp_z - waypoints[i,2]
+            x_error = wp_x - waypoints[i,0]
+            y_error = wp_y - waypoints[i,1]
+            z_error = wp_z - waypoints[i,2]
 
             # total_waypoint_error += x_error**2 + y_error**2 + z_error**2
 
-            # # equality constraint for waypoint positions
-            # g.append(x_error)
-            # g.append(y_error)
-            # g.append(z_error)
-            # for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
-
-
-            A0_i1 = A0[index+1]
-            A1_i1 = A1[index+1]
-            A2_i1 = A2[index+1]
-            A3_i1 = A3[index+1]
-            A4_i1 = A4[index+1]
-            B0_i1 = B0[index+1]
-            B1_i1 = B1[index+1]
-            B2_i1 = B2[index+1]
-            B3_i1 = B3[index+1]
-            B4_i1 = B4[index+1]
-            C0_i1 = C0[index+1]
-            C1_i1 = C1[index+1]
-            C2_i1 = C2[index+1]
-            C3_i1 = C3[index+1]
-            C4_i1 = C4[index+1]
-
-            wp_x1, wp_xd1, wp_xdd1, wp_xddd1= compute_state_1d(A0_i1,A1_i1,A2_i1,A3_i1,A4_i1, 0)
-            wp_y1, wp_yd1, wp_ydd1, wp_yddd1= compute_state_1d(B0_i1,B1_i1,B2_i1,B3_i1,B4_i1, 0)
-            wp_z1, wp_zd1, wp_zdd1, wp_zddd1= compute_state_1d(C0_i1,C1_i1,C2_i1,C3_i1,C4_i1, 0)
-
-            x_error_1 = wp_x1 - waypoints[i,0]
-            y_error_1 = wp_y1 - waypoints[i,1]
-            z_error_1 = wp_z1 - waypoints[i,2]
-
-            g.append(x_error_1)
-            g.append(y_error_1)
-            g.append(z_error_1)
+            # equality constraint for waypoint positions
+            g.append(x_error)
+            g.append(y_error)
+            g.append(z_error)
             for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+
+
+            # A0_i1 = A0[index+1]
+            # A1_i1 = A1[index+1]
+            # A2_i1 = A2[index+1]
+            # A3_i1 = A3[index+1]
+            # A4_i1 = A4[index+1]
+            # B0_i1 = B0[index+1]
+            # B1_i1 = B1[index+1]
+            # B2_i1 = B2[index+1]
+            # B3_i1 = B3[index+1]
+            # B4_i1 = B4[index+1]
+            # C0_i1 = C0[index+1]
+            # C1_i1 = C1[index+1]
+            # C2_i1 = C2[index+1]
+            # C3_i1 = C3[index+1]
+            # C4_i1 = C4[index+1]
+
+            # wp_x1, wp_xd1, wp_xdd1, wp_xddd1, _= compute_state_1d(A0_i1,A1_i1,A2_i1,A3_i1,A4_i1, 0)
+            # wp_y1, wp_yd1, wp_ydd1, wp_yddd1, _= compute_state_1d(B0_i1,B1_i1,B2_i1,B3_i1,B4_i1, 0)
+            # wp_z1, wp_zd1, wp_zdd1, wp_zddd1, _= compute_state_1d(C0_i1,C1_i1,C2_i1,C3_i1,C4_i1, 0)
+
+            # x_error_1 = wp_x1 - waypoints[i,0]
+            # y_error_1 = wp_y1 - waypoints[i,1]
+            # z_error_1 = wp_z1 - waypoints[i,2]
+
+            # g.append(x_error_1)
+            # g.append(y_error_1)
+            # g.append(z_error_1)
+            # for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
             # g.append(wp_xd1 - wp_xd)
             # g.append(wp_yd1 - wp_yd)
@@ -282,9 +282,9 @@ class SegmentCasadiSolver:
             # g.append(wp_zddd1 - wp_zddd)
             # for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-            g.append(wp_xd1)
-            g.append(wp_yd1)
-            g.append(wp_zd1)           
+            g.append(wp_xd)
+            g.append(wp_yd)
+            g.append(wp_zd)           
 
             lb_vals.append(-self.maxSpeed)
             lb_vals.append(-self.maxSpeed)
@@ -294,9 +294,9 @@ class SegmentCasadiSolver:
             ub_vals.append(self.maxSpeed)
             ub_vals.append(self.maxSpeed)
 
-            g.append(wp_xdd1)
-            g.append(wp_ydd1)
-            g.append(wp_zdd1)           
+            g.append(wp_xdd)
+            g.append(wp_ydd)
+            g.append(wp_zdd)           
 
             lb_vals.append(-self.max_accel_xy)
             lb_vals.append(-self.max_accel_xy)
@@ -306,9 +306,9 @@ class SegmentCasadiSolver:
             ub_vals.append(self.max_accel_xy)
             ub_vals.append(self.max_accel_z)
 
-            g.append(wp_xddd1)
-            g.append(wp_yddd1)
-            g.append(wp_zddd1)
+            g.append(wp_xddd)
+            g.append(wp_yddd)
+            g.append(wp_zddd)
 
             lb_vals.append(-self.max_jerk_xy)
             lb_vals.append(-self.max_jerk_xy)
@@ -380,7 +380,10 @@ def compute_state_1d(P0, P1, P2, P3, P4, dt):
     # integrate jerk
     pddd = 6 * P3 + 24 * P4 * dt
 
-    return p, pd, pdd, pddd
+    # integrate snap
+    p4 = 24 * P4 * np.ones(np.array(dt).shape)
+
+    return p, pd, pdd, pddd, p4
 
 
 def unroll_coefficients(P4, WP0, times):
@@ -460,6 +463,7 @@ def evalute_polynomials_over_control_time_step(times, n, freq, A0, A1, A2, A3, A
     v_vals = np.array([])
     a_vals = np.array([])
     j_vals = np.array([])
+    s_vals = np.array([])
 
     print("times.shape", times.shape)
     print("A0.shape", times.shape)
@@ -470,22 +474,23 @@ def evalute_polynomials_over_control_time_step(times, n, freq, A0, A1, A2, A3, A
         nsample = int(duration * freq)
         ti = np.arange(nsample) * 1 / freq
 
-        x, xd, xdd, xddd = compute_state_1d(A0[idx], A1[idx], A2[idx], A3[idx], A4[idx], ti)
-        y, yd, ydd, yddd = compute_state_1d(B0[idx], B1[idx], B2[idx], B3[idx], B4[idx], ti)
-        z, zd, zdd, zddd = compute_state_1d(C0[idx], C1[idx], C2[idx], C3[idx], C4[idx], ti)
+        x, xd, xdd, xddd, x4 = compute_state_1d(A0[idx], A1[idx], A2[idx], A3[idx], A4[idx], ti)
+        y, yd, ydd, yddd, y4 = compute_state_1d(B0[idx], B1[idx], B2[idx], B3[idx], B4[idx], ti)
+        z, zd, zdd, zddd, z4 = compute_state_1d(C0[idx], C1[idx], C2[idx], C3[idx], C4[idx], ti)
 
         p = np.hstack([x.reshape((-1,1)), y.reshape((-1,1)), z.reshape((-1,1))])
         v = np.hstack([xd.reshape((-1,1)), yd.reshape((-1,1)), zd.reshape((-1,1))])
         a = np.hstack([xdd.reshape((-1,1)), ydd.reshape((-1,1)), zdd.reshape((-1,1))])
         j = np.hstack([xddd.reshape((-1,1)), yddd.reshape((-1,1)), zddd.reshape((-1,1))])
+        s = np.hstack([x4.reshape((-1,1)), y4.reshape((-1,1)), z4.reshape((-1,1))])
 
         p_vals = p if(p_vals.size == 0) else np.concatenate([p_vals, p]).reshape(-1,3)
         v_vals = v if(v_vals.size == 0) else np.concatenate([v_vals, v]).reshape(-1,3)
         a_vals = a if(a_vals.size == 0) else np.concatenate([a_vals, a]).reshape(-1,3)
         j_vals = j if(j_vals.size == 0) else np.concatenate([j_vals, j]).reshape(-1,3)
+        s_vals = s if(s_vals.size == 0) else np.concatenate([s_vals, s]).reshape(-1,3)
 
-
-    states = np.hstack([p_vals, v_vals, a_vals, j_vals])
+    states = np.hstack([p_vals, v_vals, a_vals, j_vals, s_vals])
 
     return states
 
@@ -497,6 +502,9 @@ def generate_trajectory(waypoints, averageSpeed, numSegmentSubsections, ctrl_fre
     p_prev = waypoints[0:Nw-1,:]
     p_next = waypoints[1:,:]
     waypoint_min_lengths = np.linalg.norm(p_next - p_prev, axis=1)
+
+    # print("waypoints = ", waypoints.reshape(-1,3))
+    # print("waypoint_min_lengths = ", waypoint_min_lengths)
 
     total_length = np.sum(waypoint_min_lengths)
     total_time = total_length / averageSpeed

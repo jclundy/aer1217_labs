@@ -156,7 +156,7 @@ class SegmentCasadiSolver:
         for i in range(1,self.Nw-1):
             
             index = np.floor(adjusted_start_times[i] / self.dt).astype(np.int64) - 1
-            waypoint_dt = adjusted_start_times[i] - (index) * dt
+            waypoint_dt = self.dts[index]
 
             print("Waypoint i=", i)
             print("discretized index=", index)
@@ -458,7 +458,7 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
 
     print("*************************************************")
 
-    numWaypointsPerGroup = 3
+    numWaypointsPerGroup = 5
 
     num3Groups = np.floor((Nw - 1)/(numWaypointsPerGroup-1)).astype(np.uint32)
 

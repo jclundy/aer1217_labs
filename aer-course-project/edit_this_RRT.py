@@ -138,12 +138,26 @@ class Controller():
                     dense.append(a + (b - a) * k / n)
             return dense
         
+        def remove_duplicates(path):
+            trimed = []
+            for i in range(0, len(path) - 1):
+                a = np.array(path[i],   dtype=float)
+                b = np.array(path[i+1], dtype=float)
+                
+                if np.linalg.norm(a - b) <= 1e-6:
+                    print("duplicate found at index ", i)
+                    continue
+                else:
+                    trimed.append(a)
+            return trimed
+
         full_path, keypts = path(GATE_ORDER)
         if(use_interpolation):
             dense_path = interpolate_path(full_path, points_per_metre=10)
             self.waypoints = np.array(dense_path)
         else:
-            self.waypoints = np.array(full_path)
+            trimed_full_path = remove_duplicates(full_path)
+            self.waypoints = np.array(trimed_full_path)
 
         # ref_state = hardcoded_trajectory_generator(
         #     self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,

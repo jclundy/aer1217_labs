@@ -50,187 +50,415 @@ def gate_via_points(gate_raw, prev_pos, next_pos, buf=0.40, z_bounds=(0.10, 1.95
 
 # ── RRT* ─────────────────────────────────────────────────────────────────────
 
-class RRTStar:
-    """RRT* path planning in 3-D.
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-    Parameters
-    ----------
-    start, goal   : array-like, shape (3,)
-    obstacles     : list of [x, y, z, r, p, yaw] — pillar centres
-    gates         : list of [x, y, z, r, p, yaw, type] — gate centres
-    bounds        : array-like, shape (3, 2) — [[xlo,xhi],[ylo,yhi],[zlo,zhi]]
-    max_it        : maximum RRT* iterations
-    step_size     : max distance to extend per step  (metres)
-    goal_r        : radius within which goal is considered reached (metres)
-    rewire_r      : neighbourhood radius for rewiring (metres)
-    rng           : numpy Generator (for reproducibility)
-    """
+##constants
+GATES = [  # x, y, z, r, p, y, type 
+      [ 0.5, -2.5, 1.0, 0, 0, -1.57, 0],      # gate 1
+      [ 2.0, -1.5, 1.0, 0, 0, 0,     0],      # gate 2
+      [ 0.0,  0.5, 1.0, 0, 0, 1.57,  0],      # gate 3
+      [-0.5,  1.5, 1.0, 0, 0, 0,     0]       # gate 4
+    ]
+OBSTACLES =[  # x, y, z, r, p, y
+      [ 1.5, -2.5, 1.3, 0.35, 0, 0],             # obstacle 1
+      [ 0.5, -1.0, 1.3, 0.35, 0, 0],             # obstacle 2
+      [ 1.5,    0, 1.3, 0.35, 0, 0],             # obstacle 3
+      [-1.0,    0, 1.3, 0.35, 0, 0]              # obstacle 4  
+    ]
+##start and end points
+START = [-1.0, -3.0, 1.0]  # start
+GOAL = [-0.5,  2.0, 1.0]  # goal
+##bounds
+BOUNDS   = np.array([[-3.5, 3.5], [-3.5, 3.5], [0.10, 1.95]])
+Z_BOUNDS = (BOUNDS[2, 0], BOUNDS[2, 1])
+PADDING = 0.5 #for sample selection
 
-    # Collision radii — inflated to account for the 0.2 m obstacle uncertainty
-    OBS_RADIUS  = 0.35   # pillar radius 0.06 m + 0.20 m noise + 0.09 m drone body
-    GATE_RADIUS = 0.30   # gate half-width 0.20 m + some margin
+##eg gate order
+GATE_ORDER = [1,3,2,4,3,1]
 
-    def __init__(self, start, goal, obstacles, gates, bounds,
-                 max_it=500, step_size=0.4, goal_r=0.15, rewire_r=0.6, rng=None):
+##RRT Variables
+ITERATION = 1000
+REWIRE = 0.7
+GOAL_R = 0.15
+STEP_SIZE = 0.3
+MAX_SEG = 1.25 
 
-        self.start     = np.array(start,  dtype=float)
-        self.goal      = np.array(goal,   dtype=float)
-        self.obstacles = obstacles          # list of obstacle descriptors
-        self.gates     = gates              # list of gate descriptors
-        self.bounds    = np.array(bounds,  dtype=float)   # shape (3,2)
-        self.max_it    = max_it
-        self.step_size = step_size
-        self.goal_r    = goal_r
-        self.rewire_r  = rewire_r
-        self.rng       = rng if rng is not None else np.random.default_rng(1)
+# Collision radii — inflated to account for the 0.2 m obstacle uncertainty
+OBS_RADIUS  = 0.40  # pillar radius 0.06 m + 0.20 m noise + 0.09 m drone body
+GATE_RADIUS = 0.40  # gate half-width 0.20 m + 0.20 m noise
 
-        # Tree storage
-        self.nodes   = [self.start.copy()]
-        self.parents = [-1]
-        self.costs   = [0.0]
+##random gen
+rng = np.random.default_rng(1)
 
-    # ── Collision ─────────────────────────────────────────────────────────────
+##waypoint functions
+def gate_normal(yaw):
+    ##return vector that points through gate
+    return np.array([np.sin(yaw), -np.cos(yaw), 0.0])
 
-    def _point_in_collision(self, pt, target_gate_idx=None):
-        """Return True if *pt* is inside any obstacle or non-target gate.
+def gate_points(last_pt, gate_id, z_bounds=(0.10, 1.95)):
+    """Return (approach, centre, departure) waypoints for a gate."""
 
-        Args:
-            pt               : (3,) position to test
-            target_gate_idx  : 0-based index of the gate being navigated through
-                               (that gate is skipped in collision checks); None = skip all gate checks
-        """
-        x, y, z = pt[:3]
+    ##buffer
+    buf = 0.45
 
-        # Obstacle pillars — treat as infinite-height cylinders (z check optional)
-        for obs in self.obstacles:
-            px, py = obs[0], obs[1]
-            if (x - px)**2 + (y - py)**2 < self.OBS_RADIUS**2:
-                return True
+    ##get points
+    centre = np.array(GATES[gate_id][:3], dtype=float)
+    last_pt = np.array(last_pt, dtype=float)
+    yaw    = GATES[gate_id][5]
+    nrm    = gate_normal(yaw)   # unit vector along fly-through axis
 
-        # Other gates — treated as spheres to avoid clipping their frames
-        for i, gate in enumerate(self.gates):
-            if i == target_gate_idx:
-                continue   # allowed to pass through this gate
-            gx, gy, gz = gate[:3]
-            if (x - gx)**2 + (y - gy)**2 + (z - gz)**2 < self.GATE_RADIUS**2:
-                return True
+    # Determine which side to approach from using the incoming direction
+    pt_a = buf*nrm + centre 
+    pt_b = -buf*nrm + centre
+    ##get diff to find the fastest route
+    diff_a = pt_a - last_pt
+    diff_b = pt_b - last_pt
+    ##determine direction
+    if np.linalg.norm(diff_a) < np.linalg.norm(diff_b):
+        approach = pt_a
+        departure = pt_b
+    else:
+        approach = pt_b
+        departure = pt_a
 
-        return False
+    return approach, centre, departure
 
-    def _segment_free(self, a, b, target_gate_idx=None):
-        """Return True if the straight segment a→b is collision-free."""
-        dist = np.linalg.norm(b - a)
-        n    = max(8, int(dist / 0.05))   # check every ~5 cm
-        for t in np.linspace(0.0, 1.0, n):
-            pt = a + t * (b - a)
-            if self._point_in_collision(pt, target_gate_idx):
-                return False
+# ── RRT* ─────────────────────────────────────────────────────────────────────
+def weighted_dist(a, b):
+    """Euclidean distance with extra cost for Z changes."""
+    Z_PENALTY = 5.0
+    diff = b - a
+    return np.sqrt(diff[0]**2 + diff[1]**2 + (diff[2] * Z_PENALTY)**2)
+
+def split_segment(a, b, gate):
+    """Return a midpoint between a and b, nudged away from collisions."""
+    a, b = np.array(a), np.array(b)
+    mid = (a + b) / 2.0 
+    mid[2] = 1 ##flat z
+
+    MIN_CLEARANCE = OBS_RADIUS + 0.2   
+
+    ##add clearance buffer
+    def has_clearance(pt):
+        if in_collision(pt, gate):
+            return False
+        for obs in OBSTACLES:
+            d = np.sqrt((pt[0]-obs[0])**2 + (pt[1]-obs[1])**2)
+            if d < MIN_CLEARANCE:
+                    return False
         return True
 
-    # ── Sampling & steering ───────────────────────────────────────────────────
+    if has_clearance(mid):
+        return mid
 
-    def _sample(self):
-        """Random sample with 15 % goal bias."""
-        if self.rng.random() < 0.15:
-            return self.goal.copy()
-        lo = self.bounds[:, 0]
-        hi = self.bounds[:, 1]
-        return self.rng.uniform(lo, hi)
+    print('midpoint not easily found')
+    # midpoint is in collision — sample random offsets until we find a free one
+    for _ in range(50):
+        noise = rng.uniform(-0.5, 0.5, size=3)
+        candidate = mid + noise
+        candidate[2] = 1
+        if not in_collision(candidate, gate):
+            return candidate
 
-    def _nearest(self, sample):
-        """Index of the tree node nearest to *sample*."""
-        dists = np.linalg.norm(np.array(self.nodes) - sample, axis=1)
-        return int(np.argmin(dists))
+    # fallback — return midpoint anyway and let the planner deal with it
+    # print(f"  [warn] split_segment could not find free midpoint between {a} and {b}")
+    return mid
 
-    def _steer(self, from_idx, to_pt):
-        """Move from node *from_idx* towards *to_pt* by at most step_size."""
-        from_pt = np.array(self.nodes[from_idx])
-        vec     = to_pt - from_pt
-        dist    = np.linalg.norm(vec)
-        if dist < 1e-9:
-            return from_pt.copy()
-        return from_pt + (vec / dist) * min(self.step_size, dist)
+##collision functions
+def in_collision(pt, target_gate):
+    """Return True if *pt* is inside any obstacle or non-target gate."""
+    x, y, z = pt[:3]
 
-    def _near_indices(self, pt):
-        """Indices of nodes within rewire_r of *pt*."""
-        dists = np.linalg.norm(np.array(self.nodes) - pt, axis=1)
-        return np.where(dists < self.rewire_r)[0]
+    # Obstacle pillars
+    for obs in OBSTACLES:
+        px, py = obs[0], obs[1]
+        if (x - px)**2 + (y - py)**2 < OBS_RADIUS**2:
+            return True
 
-    def _extract_path(self, idx):
-        """Walk parent pointers back to root and return ordered path."""
-        path = []
-        while idx != -1:
-            path.append(np.array(self.nodes[idx]))
-            idx = self.parents[idx]
-        path.reverse()
-        return path
+    # Other gates
+    for i, gate in enumerate(GATES):
+        if i == target_gate:
+            continue   # allowed to pass through this gate
+        gx, gy, gz = gate[:3]
+        if (x - gx)**2 + (y - gy)**2 + (z - gz)**2 < GATE_RADIUS**2:
+            return True
 
-    # ── Main loop ─────────────────────────────────────────────────────────────
+    return False ##no collision at pt
 
-    def plan(self, target_gate_idx=None):
-        """Run RRT* and return the path as a list of (3,) arrays.
+def segment_free(a, b, target_gate):
+    """Return True if the straight segment a→b is collision-free."""
+    dist = np.linalg.norm(b - a)
+    n    = max(20, int(dist / 0.05))   # check every ~5 cm
+    for t in np.linspace(0.0, 1.0, n):
+        pt = a + t * (b - a)
+        if in_collision(pt, target_gate):
+            return False
+    return True
 
-        Args:
-            target_gate_idx : 0-based gate index that collision checks should
-                              ignore (the gate we are flying through).
-                              Pass None if no gate should be ignored.
+##sampling and steering
+def _sample(seg_start, seg_goal):
+    """Random sample with goal bias, clipped to a corridor around the segment."""
+    if rng.random() < 0.15:
+        return seg_goal.copy()
+    
+    # bounding box for sampling
+    lo = np.minimum(seg_start, seg_goal) - PADDING
+    hi = np.maximum(seg_start, seg_goal) + PADDING
 
-        Returns:
-            list of np.ndarray (3,), or None if no path found within max_it.
-        """
-        for _ in range(self.max_it):
+    # clip to arena bounds
+    lo = np.maximum(lo, BOUNDS[:, 0])
+    hi = np.minimum(hi, BOUNDS[:, 1])
 
-            sample      = self._sample()
-            nearest_idx = self._nearest(sample)
-            new_pt      = self._steer(nearest_idx, sample)
+    ##+/- 20 cm from z for sample
+    zlo = 0.8
+    zhi = 1.2
+    lo[2] = np.maximum(lo[2], zlo)
+    hi[2] = np.minimum(hi[2], zhi)
+    pt = rng.uniform(lo, hi)
+    # pt[2] = 1
+    return pt
 
-            # Reject if the new point itself is in collision
-            if self._point_in_collision(new_pt, target_gate_idx):
-                continue
+def nearest(sample, nodes):
+    """Index of the tree node nearest to *sample*."""
+    dists = np.linalg.norm(np.array(nodes) - sample, axis=1)
+    return int(np.argmin(dists))
 
-            # Reject if the edge to the new point is in collision
-            if not self._segment_free(self.nodes[nearest_idx], new_pt, target_gate_idx):
-                continue
+def steer(from_pt, to_pt):
+    """Move from node *from_idx* towards *to_pt* by at most step_size."""
+    vec     = to_pt - from_pt
+    dist    = np.linalg.norm(vec)
+    if dist < 1e-9:
+        return from_pt.copy()
+    return from_pt + (vec / dist) * min(STEP_SIZE, dist)
 
-            # ── Choose best parent from neighbourhood ──────────────────────
-            near_idxs   = self._near_indices(new_pt)
-            best_parent = nearest_idx
-            best_cost   = (self.costs[nearest_idx]
-                           + np.linalg.norm(self.nodes[nearest_idx] - new_pt))
+def near_id(pt, nodes):
+    """Indices of nodes within rewire_r of *pt*."""
+    dists = np.linalg.norm(np.array(nodes) - pt, axis=1)
+    return np.where(dists < REWIRE)[0]
 
-            for idx in near_idxs:
-                edge_cost = np.linalg.norm(self.nodes[idx] - new_pt)
-                cost_via  = self.costs[idx] + edge_cost
-                if cost_via < best_cost and self._segment_free(self.nodes[idx], new_pt, target_gate_idx):
-                    best_parent = idx
-                    best_cost   = cost_via
+##last step
+def extract_path(idx, nodes, parents):
+    """Walk parent pointers back to root and return ordered path."""
+    path, idx = [], idx
+    while idx != -1:
+        path.append(np.array(nodes[idx]))
+        idx = parents[idx]
+    path.reverse()
+    return path
 
-            # ── Add node to tree ───────────────────────────────────────────
-            new_idx = len(self.nodes)
-            self.nodes.append(new_pt)
-            self.parents.append(best_parent)
-            self.costs.append(best_cost)
+##PLAN segment
+def plan(start, goal, target_gate):
+    """
+    Run RRT* from *start* to *goal* while treating *target_gate* (0-indexed)
+    as passable.  Returns the smoothed waypoint list, or [start, goal] on
+    failure.
+    """
+    nodes   = [np.array(start, dtype=float)]
+    parents = [-1]
+    costs   = [0.0]
+    goal_idx = None
 
-            # ── Rewire neighbours through new node if cheaper ──────────────
-            for idx in near_idxs:
-                edge_cost = np.linalg.norm(self.nodes[idx] - new_pt)
-                cost_via  = self.costs[new_idx] + edge_cost
-                if cost_via < self.costs[idx] and self._segment_free(new_pt, self.nodes[idx], target_gate_idx):
-                    self.parents[idx] = new_idx
-                    self.costs[idx]   = cost_via
+    for _ in range(ITERATION):
+        sample = _sample(start, goal)
+        nearest_idx = nearest(sample, nodes)
+        new_pt = steer(np.array(nodes[nearest_idx]), sample)
+        # Clamp z to valid bounds
+        new_pt[2] = np.clip(new_pt[2], BOUNDS[2, 0], BOUNDS[2, 1])
 
-            # ── Check goal ─────────────────────────────────────────────────
-            if np.linalg.norm(new_pt - self.goal) < self.goal_r:
-                # Connect directly to goal
-                goal_cost = self.costs[new_idx] + np.linalg.norm(new_pt - self.goal)
-                self.nodes.append(self.goal.copy())
-                self.parents.append(new_idx)
-                self.costs.append(goal_cost)
-                return self._extract_path(len(self.nodes) - 1)
+        ## Best parent
+        neighbours = near_id(new_pt, nodes)
+        best_parent = nearest_idx
+        # Cost to get to new_pt via the initial nearest node
+        best_cost = costs[nearest_idx] + weighted_dist(nodes[nearest_idx], new_pt)
 
-        # max_it exhausted without reaching goal
-        return None
+        for nb in neighbours:
+            # Calculate potential cost via this neighbor
+            c = costs[nb] + weighted_dist(nodes[nb], new_pt)
+            if c < best_cost:
+                # Check if the connection is actually clear
+                if segment_free(nodes[nb], new_pt, target_gate):
+                    best_cost = c
+                    best_parent = nb
+        
+        #check for clear path
+        if not segment_free(nodes[best_parent], new_pt, target_gate):
+            continue
 
+        ## add node
+        new_idx = len(nodes)
+        nodes.append(new_pt.copy())
+        parents.append(best_parent)
+        costs.append(best_cost)
+
+        ## rewire neighbours
+        for nb in neighbours:
+            d_to_nb = weighted_dist(new_pt, nodes[nb])#dist to nc
+            ##rewire if clear
+            if costs[new_idx] + d_to_nb < costs[nb]:
+                if segment_free(new_pt, nodes[nb], target_gate):
+                    parents[nb] = new_idx
+                    costs[nb] = costs[new_idx] + d_to_nb
+
+        # Check if goal is reachable
+        goal_arr = np.array(goal)
+        if np.linalg.norm(new_pt - goal_arr) < GOAL_R:
+            if segment_free(new_pt, goal_arr, target_gate):
+                # total_c = costs[]
+                g_idx = len(nodes)
+                nodes.append(goal_arr.copy())
+                parents.append(new_idx)
+                costs.append(best_cost + weighted_dist(goal_arr, new_pt))
+                goal_idx = g_idx
+
+    
+    if goal_idx is None:
+        print(f"!!!! RRT* did not reach goal {goal}; using straight line")
+        return [np.array(start), np.array(goal)]
+  
+    return extract_path(goal_idx, nodes, parents)
+
+def path(GATE_ORDER):
+    ##Get waypoints
+    key_pts = [START.copy()]
+    # gate_ids = [-1] ##O index
+    gate_ids = []
+
+    prev = START.copy()
+    for gid in GATE_ORDER:
+        gid0 = gid-1
+        gate_ids.extend([gid0, gid0, gid0]) ##for obstacle detection o indexed
+        ## add pts to ensure flying in and out normal to gate
+        approach, centre, departure = gate_points(prev, gid0)
+        key_pts.extend([approach, centre, departure])
+        # key_pts.extend([approach, departure])
+        prev = departure
+    key_pts.append(GOAL.copy())
+    gate_ids.append(-1) ##O index
+   
+
+    ###run rrt*
+    full_path = [START]
+    path_total_len = len(key_pts)-1
+    ##iterate through all the key points
+    for i in range(path_total_len):
+        seg_start = key_pts[i]
+        seg_goal   = key_pts[i + 1]
+        tgt_gate   = gate_ids[i]
+        
+        ##print update
+        print(f"Segment {i+1}/{path_total_len}:"
+              f"{np.round(seg_start, 2)} → {np.round(seg_goal, 2)} "
+              f"(gate mask: {tgt_gate})")
+
+        ##check for long segs
+        dist = np.linalg.norm(np.array(seg_start) - np.array(seg_goal))
+        if dist >= MAX_SEG:
+            # print('long segment, splitting')
+            half_pt = split_segment(seg_start, seg_goal, tgt_gate)
+            seg1 = plan(seg_start, half_pt, tgt_gate)
+            seg2 = plan(half_pt, seg_goal, tgt_gate)
+            full_path.extend(seg1[1:])
+            full_path.extend(seg2[1:])
+        elif dist < 0.55:
+            ##straight line 
+            full_path.append(np.array(seg_goal))
+        else:
+            ##get segment
+            seg = plan(seg_start, seg_goal, tgt_gate)
+            if full_path:
+                seg = seg[1:] 
+            full_path.extend(seg)
+        
+        ##get segment
+        # seg = plan(seg_start, seg_goal, tgt_gate)
+        # full_path.extend(seg[1:])
+
+
+    return full_path, key_pts
+
+##plot 
+def plot_path(full_path, key_waypoints):
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # ── Path ──────────────────────────────────────────────────────────────────
+    path_arr = np.array(full_path)
+    ax.plot(path_arr[:, 0], path_arr[:, 1], path_arr[:, 2],
+            color='royalblue', linewidth=1.5, label='RRT* path', zorder=3)
+    ax.scatter(*START, color='green',  s=80, zorder=5, label='Start')
+    ax.scatter(*GOAL,  color='red',    s=80, zorder=5, label='Goal')
+
+    # ── Gates ─────────────────────────────────────────────────────────────────
+    GATE_W = 0.4   # half-width of gate opening
+    for i, gate in enumerate(GATES):
+        gx, gy, gz = gate[:3]
+        yaw = gate[5]
+        # gate opening is perpendicular to the fly-through normal
+        perp = np.array([-np.cos(yaw), -np.sin(yaw), 0.0])
+        top  = np.array([0, 0, GATE_W])
+        # four corners of the gate rectangle
+        centre = np.array([gx, gy, gz])
+        corners = [
+            centre + perp * GATE_W + np.array([0, 0, -GATE_W]),
+            centre - perp * GATE_W + np.array([0, 0, -GATE_W]),
+            centre - perp * GATE_W + np.array([0, 0,  GATE_W]),
+            centre + perp * GATE_W + np.array([0, 0,  GATE_W]),
+        ]
+        poly = Poly3DCollection([corners], alpha=0.25, facecolor='gold', edgecolor='darkorange', linewidth=1.2)
+        ax.add_collection3d(poly)
+        ax.text(gx, gy, gz + GATE_W + 0.1, f'G{i+1}',
+                fontsize=8, color='darkorange', ha='center')
+
+    # ── Obstacles ─────────────────────────────────────────────────────────────
+    theta = np.linspace(0, 2 * np.pi, 30)
+    z_cyl = np.linspace(0.0, 1.95, 2)
+    for obs in OBSTACLES:
+        ox, oy, r = obs[0], obs[1], OBS_RADIUS
+        X = ox + r * np.outer(np.cos(theta), np.ones_like(z_cyl))
+        Y = oy + r * np.outer(np.sin(theta), np.ones_like(z_cyl))
+        Z =       np.outer(np.ones_like(theta), z_cyl)
+        ax.plot_surface(X, Y, Z, color='tomato', alpha=0.25, linewidth=0)
+        # top cap
+        cap_x = ox + r * np.cos(theta)
+        cap_y = oy + r * np.sin(theta)
+        cap_corners = list(zip(cap_x, cap_y, np.full_like(cap_x, 1.95)))
+        cap_poly = Poly3DCollection([cap_corners], alpha=0.3, facecolor='tomato', linewidth=0)
+        ax.add_collection3d(cap_poly)
+    # ── Gate order waypoints ───────────────────────────────────────────────────
+    kw = np.array(key_waypoints)
+    ax.scatter(kw[:, 0], kw[:, 1], kw[:, 2],
+               color='orange', s=25, zorder=4, label='Key waypoints')
+
+    # ── Axes ──────────────────────────────────────────────────────────────────
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_zlabel('Z (m)')
+    ax.set_xlim(BOUNDS[0])
+    ax.set_ylim(BOUNDS[1])
+    ax.set_zlim(BOUNDS[2])
+    ax.set_title('RRT* path — gate sequence ' + str(GATE_ORDER))
+    ax.legend(loc='upper left', fontsize=8)
+    plt.tight_layout()
+    plt.show()
+
+if __name__ =="__main__":
+    gates = [1,3,4,1,3,2]
+    path, key_waypoints = path(gates)
+    print("Key waypoints (gates + start/goal):")
+    for i, pt in enumerate(key_waypoints):
+        print(f"  {i:2d}: {np.round(pt, 3)}")
+
+    print("\nFull path:")
+    for i, pt in enumerate(path):
+        print(f"  {i:3d}: {np.round(pt, 3)}")
+
+    ##plot path
+    plot_path(path, key_waypoints)
+
+#___ Trajectory optimization _____________________________________________
 # from casadi import *
 import casadi as ca
 import numpy as np

@@ -29,8 +29,8 @@ Tips:
 import numpy as np
 from collections import deque
 
-from example_custom_utils import gate_normal, gate_via_points, RRTStar, generate_trajectory
-from rrt_star import path
+from example_custom_utils import gate_normal, gate_via_points, path, generate_trajectory
+# from rrt_star import path
 from trajectory_generators import hardcoded_trajectory_generator
 try:
     from project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory

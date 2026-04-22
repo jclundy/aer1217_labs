@@ -265,9 +265,9 @@ class Controller():
         elif iteration >= land_iteration and iteration < land_iteration + 1:
             print("sending land command")
             command_type, args = Command(3), [0., landDuration]  # land
-        elif iteration >= end_iteration:
-            print("sending exit command")
-            command_type, args = Command(4), []  # exit
+        # elif iteration >= end_iteration:
+        #     print("sending exit command")
+        #     command_type, args = Command(4), []  # exit
         else:
             command_type, args = Command(0), []
         #########################

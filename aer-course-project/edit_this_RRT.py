@@ -125,7 +125,7 @@ class Controller():
         #########################
         # REPLACE THIS (START) ##
         #########################
-        use_interpolation = False
+        use_interpolation = True
 
         def interpolate_path(path, points_per_metre=10):
             dense = [path[0]]
@@ -153,8 +153,10 @@ class Controller():
 
         full_path, keypts = path(GATE_ORDER)
         if(use_interpolation):
-            dense_path = interpolate_path(full_path, points_per_metre=10)
-            self.waypoints = np.array(dense_path)
+            trimed_full_path = remove_duplicates(full_path)
+            dense_path = interpolate_path(trimed_full_path, points_per_metre=5)
+            trimed_full_dense_path = remove_duplicates(full_path)
+            self.waypoints = np.array(trimed_full_dense_path)
         else:
             trimed_full_path = remove_duplicates(full_path)
             self.waypoints = np.array(trimed_full_path)
@@ -163,7 +165,7 @@ class Controller():
         #     self.initial_obs, initial_info, self.CTRL_FREQ, self.total_duration,
         #     waypoints=self.waypoints
         # )
-        discretization_dt = 0.05
+        discretization_dt = 0.1
         averageSpeed = 0.5 #20 cm /s
 
         ref_state = None

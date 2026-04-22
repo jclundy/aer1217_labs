@@ -25,7 +25,7 @@ Z_BOUNDS = (BOUNDS[2, 0], BOUNDS[2, 1])
 PADDING = 0.5 #for sample selection
 
 ##eg gate order
-GATE_ORDER = [1,3,4,1,3,2]
+GATE_ORDER = [1,3,2,4,3,1]
 
 ##RRT Variables
 ITERATION = 1000

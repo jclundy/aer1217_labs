@@ -47,7 +47,7 @@ import os
 
 ##GATE ORDER
 
-GATE_ORDER = [1, 2, 3, 4, 2, 3]
+GATE_ORDER = [1, 3, 4, 2, 1, 4]
 
 #########################
 # REPLACE THIS (END) ####
@@ -160,7 +160,7 @@ class Controller():
 
         ref_state = None
         save_file = "test_states.npz" # "trajectory_states.npz"
-        recompute_trajectory = False
+        recompute_trajectory = True
         if(os.path.exists(save_file) and not recompute_trajectory):
             print("loading saved trajectory")
             npzfile = np.load(save_file)

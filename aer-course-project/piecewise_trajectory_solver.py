@@ -37,7 +37,7 @@ class SegmentCasadiSolver:
 
         self.max_snap = self.max_jerk_xy / dt
 
-        snap_integral = 24**2 * ca.sum((self.A4 * self.dts)**2) + 24**2 *ca.sum((self.B4 * self.dts)**2) + 24**2 * ca.sum((self.C4 * self.dts)**2)
+        snap_integral = 24**2 * ca.sum1((self.A4 * self.dts)**2) + 24**2 *ca.sum1((self.B4 * self.dts)**2) + 24**2 * ca.sum1((self.C4 * self.dts)**2)
 
 
         A0, A1, A2, A3, A4 = unroll_coefficients(self.A4,waypoints[0,0],self.dts)

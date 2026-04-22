@@ -484,11 +484,19 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numW
     for groupIdx in range(0, num3Groups): 
 
         segmentStartIdx = groupIdx * (numWaypointsPerGroup-1)
-        segmentEndIdx = segmentStartIdx + numWaypointsPerGroup-1
+        
+        if(groupIdx == num3Groups- 1):
+            segmentEndIdx = Nw-1
+        else:
+            segmentEndIdx = segmentStartIdx + numWaypointsPerGroup-1
 
+        numSegmentsInGroup = (segmentEndIdx - segmentStartIdx)
         print("solving group ", groupIdx)
         print("segmentStartIdx ", segmentStartIdx)
         print("segmentEndIdx ", segmentEndIdx)
+        print("numSegmentsInGroup ", numSegmentsInGroup)
+
+        
 
 
         # if(segmentEndIdx < Nw-numWaypointsPerGroup):
@@ -503,10 +511,11 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numW
             print("setting trajectory endpoint velocity to zero")
             segmentEndDerivatives = np.zeros((3,3))
         else:
-            delta = (waypoints[segmentEndIdx+1,:] - waypoints[segmentEndIdx,:])
-            endVel = delta/np.linalg.norm(delta) * averageSpeed
-            segmentEndDerivatives = np.ones((3,3)) * np.inf
-            segmentEndDerivatives[0,:] = endVel
+            # delta = (waypoints[segmentEndIdx+1,:] - waypoints[segmentEndIdx,:])
+            # endVel = delta/np.linalg.norm(delta) * averageSpeed
+            # segmentEndDerivatives = np.ones((3,3)) * np.inf
+            # segmentEndDerivatives[0,:] = endVel
+            segmentEndDerivatives  = np.ones((3,3)) * np.inf
 
 
         segment_waypoints = waypoints[segmentStartIdx:segmentEndIdx+1,:]
@@ -519,7 +528,7 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numW
 
         segment_waypoint_start_times = waypoint_start_times[segmentStartIdx:segmentEndIdx+1]
 
-        discretization_dt = groupDuration / (2*numSubsections)
+        discretization_dt = groupDuration / (numSegmentsInGroup*numSubsections)
 
         print("solving group ", groupIdx)
         print("segmentStartIdx ", segmentStartIdx)

@@ -65,7 +65,7 @@ def generate_waypoints():
 
 def main():
     all_waypoints = generate_waypoints()
-    waypoints = all_waypoints[0:4,:]
+    waypoints = all_waypoints[0:6,:]
    
     # total_time = 30.3
 
@@ -73,7 +73,7 @@ def main():
     ctrl_freq = 60
 
     if use_discretized:
-        numSubsections = 10  
+        numSubsections = 7
         states, total_duration = generate_trajectory(waypoints, average_speed, numSubsections, ctrl_freq)
     else:
         discretization_dt = 0.1
@@ -85,7 +85,7 @@ def main():
     wy = waypoints[:,1]
     wz = waypoints[:,2]
 
-    ax0.scatter(wx, wy, wz, marker='o')
+    ax0.scatter(wx, wy, wz, marker='^')
     # plot_times = np.ones_like(A0_vals) * plot_dt
 
     print("states.shape",states.shape)
@@ -100,7 +100,7 @@ def main():
     z_vals = states[:,2]
     
     
-    ax0.plot(x_vals,y_vals,z_vals)
+    ax0.plot(x_vals,y_vals,z_vals, marker='o')
     ax0.set_xlabel("x")
     ax0.set_ylabel("y")
     ax0.set_zlabel("z")

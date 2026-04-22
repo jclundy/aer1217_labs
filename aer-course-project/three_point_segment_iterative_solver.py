@@ -511,11 +511,11 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numW
             print("setting trajectory endpoint velocity to zero")
             segmentEndDerivatives = np.zeros((3,3))
         else:
-            # delta = (waypoints[segmentEndIdx+1,:] - waypoints[segmentEndIdx,:])
-            # endVel = delta/np.linalg.norm(delta) * averageSpeed
-            # segmentEndDerivatives = np.ones((3,3)) * np.inf
-            # segmentEndDerivatives[0,:] = endVel
-            segmentEndDerivatives  = np.ones((3,3)) * np.inf
+            delta = (waypoints[segmentEndIdx+1,:] - waypoints[segmentEndIdx,:])
+            endVel = delta/np.linalg.norm(delta) * averageSpeed
+            segmentEndDerivatives = np.ones((3,3)) * np.inf
+            segmentEndDerivatives[0,:] = endVel
+            # segmentEndDerivatives  = np.ones((3,3)) * np.inf
 
 
         segment_waypoints = waypoints[segmentStartIdx:segmentEndIdx+1,:]

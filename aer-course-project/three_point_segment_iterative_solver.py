@@ -29,15 +29,13 @@ class SegmentCasadiSolver:
         self.B4 = ca.SX.sym('B4', N)
         self.C4 = ca.SX.sym('C4', N)
 
-        self.max_accel_xy = 2 * maxSpeed / self.dt
-        self.max_accel_z = 0.517
+        self.max_accel_xy = maxSpeed / 4
+        self.max_accel_z = maxSpeed / 4
 
-        self.min_time = 5
+        self.max_jerk_xy = self.max_accel_xy / 4
+        self.max_jerk_z = self.max_accel_z / 4
 
-        self.max_jerk_xy = 2 * self.max_accel_xy / self.dt
-        self.max_jerk_z = 2 * self.max_accel_z / self.dt
-
-        self.max_snap = 2 * self.max_jerk_xy / self.dt
+        self.max_snap = self.max_jerk_xy / 4
 
         snap_integral = 24**2 * ca.sum((self.A4 * self.dts)**2) + 24**2 *ca.sum((self.B4 * self.dts)**2) + 24**2 * ca.sum((self.C4 * self.dts)**2)
 
@@ -176,6 +174,8 @@ class SegmentCasadiSolver:
         for i in range(1,self.Nw-1):
             
             index = np.floor(adjusted_start_times[i] / self.dt).astype(np.int64) - 1
+            if(index < 0):
+                index = 0
             waypoint_dt = self.dts[index]
 
             print("Waypoint i=", i)
@@ -461,12 +461,12 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numW
     durations = np.array([])
 
 
-    ax0 = plt.figure().add_subplot(projection='3d')
+    # ax0 = plt.figure().add_subplot(projection='3d')
     wx = waypoints[:,0]
     wy = waypoints[:,1]
     wz = waypoints[:,2]
 
-    ax0.scatter(wx, wy, wz, marker='o')
+    # ax0.scatter(wx, wy, wz, marker='o')
 
     segment_derivatives = np.zeros((2,3,3))
     segment_derivatives[1,:,:] = np.inf
@@ -573,7 +573,7 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numW
         C4 = np.concatenate([C4, np.array(C4_i).flatten()])
         durations = np.concatenate([durations, solver.dts.flatten()])
         
-        ax0.scatter(A0,B0,C0)
+        # ax0.scatter(A0,B0,C0)
 
         
         tn = solver.dts[-1]
@@ -601,7 +601,7 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numW
 
         print("--------------------------------------------------------------------")
 
-    plt.savefig("P0_coeffs.png")
+    # plt.savefig("P0_coeffs.png")
 
     np.savez("combined_coefficients.npz", 
              A4=A4,
@@ -628,9 +628,8 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numW
     sx, wp_xd, wp_xdd, wp_xddd= compute_state_1d(A0,A1,A2,A3,A4, durations)
     sy, wp_yd, wp_ydd, wp_yddd= compute_state_1d(B0,B1,B2,B3,B4, durations)
     sz, wp_zd, wp_zdd, wp_zddd= compute_state_1d(C0,C1,C2,C3,C4, durations)
-    ax = plt.figure().add_subplot(projection='3d')
-    ax.scatter(sx,sy,sz)
-
+    # ax = plt.figure().add_subplot(projection='3d')
+    # ax.scatter(sx,sy,sz)
 
 
     p_ref = states[:,0:3]

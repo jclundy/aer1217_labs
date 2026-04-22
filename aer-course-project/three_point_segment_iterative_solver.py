@@ -115,41 +115,44 @@ class SegmentCasadiSolver:
 
         print("waypoints[-1,:]",waypoints[-1,:])
 
-        xNd_error = xdN - waypoint_derivatives[self.Nw-1, 0,0]
-        yNd_error = ydN - waypoint_derivatives[self.Nw-1, 0,1]
-        zNd_error = zdN - waypoint_derivatives[self.Nw-1, 0,2]
-
-        xNdd_error = xddN - waypoint_derivatives[self.Nw-1, 1,0]
-        yNdd_error = yddN - waypoint_derivatives[self.Nw-1, 1,1]
-        zNdd_error = zddN - waypoint_derivatives[self.Nw-1, 1,2]
-
-        xNddd_error = xdddN - waypoint_derivatives[self.Nw-1, 2,0]
-        yNddd_error = ydddN - waypoint_derivatives[self.Nw-1, 2,1]
-        zNddd_error = zdddN - waypoint_derivatives[self.Nw-1, 2,2]
-
         g.append(xN_error)
         g.append(yN_error)
         g.append(zN_error)
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
-        # equality constraint for speed
-        g.append(xNd_error)
-        g.append(yNd_error)
-        g.append(zNd_error)
-        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+        if (np.isfinite(waypoint_derivatives[self.Nw-1,0:2,0:2]).all()):
+            print("applying endpoint derivative condition")
+            xNd_error = xdN - waypoint_derivatives[self.Nw-1, 0,0]
+            yNd_error = ydN - waypoint_derivatives[self.Nw-1, 0,1]
+            zNd_error = zdN - waypoint_derivatives[self.Nw-1, 0,2]
 
-        # equality constraints for acceleration
-        g.append(xNdd_error)
-        g.append(yNdd_error)
-        g.append(zNdd_error)
-        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+            xNdd_error = xddN - waypoint_derivatives[self.Nw-1, 1,0]
+            yNdd_error = yddN - waypoint_derivatives[self.Nw-1, 1,1]
+            zNdd_error = zddN - waypoint_derivatives[self.Nw-1, 1,2]
 
-        # # inequality constraints for jerk
-        g.append(xNddd_error)
-        g.append(yNddd_error)
-        g.append(zNddd_error)
-        for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+            xNddd_error = xdddN - waypoint_derivatives[self.Nw-1, 2,0]
+            yNddd_error = ydddN - waypoint_derivatives[self.Nw-1, 2,1]
+            zNddd_error = zdddN - waypoint_derivatives[self.Nw-1, 2,2]
 
+            # equality constraint for speed
+            g.append(xNd_error)
+            g.append(yNd_error)
+            g.append(zNd_error)
+            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+
+            # equality constraints for acceleration
+            g.append(xNdd_error)
+            g.append(yNdd_error)
+            g.append(zNdd_error)
+            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+
+            # # inequality constraints for jerk
+            g.append(xNddd_error)
+            g.append(yNddd_error)
+            g.append(zNddd_error)
+            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+        else:
+            print("skipping endpoint derivative condition")
 
         for i in range(1,self.Nw-1):
             
@@ -407,21 +410,12 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
 
     maxSpeed = 4 *averageSpeed
 
-    waypoint_desired_velocities = np.zeros(waypoints.shape)
-    waypoint_desired_velocities[1:Nw-2,:] = np.inf
-
-    waypoint_desired_accelerations = np.zeros(waypoints.shape)
-    waypoint_desired_accelerations[1:Nw-2,:] = np.inf
-
-    waypoint_desired_jerks = np.zeros(waypoints.shape)
-    waypoint_desired_jerks[1:Nw-2,:] = np.inf
-
     waypoint_start_times = np.zeros((Nw,))
     for i in range(0,segment_durations.size):
         waypoint_start_times[i+1] = waypoint_start_times[i] + segment_durations[i]
 
-    desired_derivatives = np.zeros((Nw, 3, 3))
-    desired_derivatives[1:Nw-2,:,:] = np.inf
+    desired_derivatives = np.ones((Nw, 3, 3)) * np.inf
+    desired_derivatives[0,:,:] = 0
     desired_derivatives[Nw-1,:,:] = 0
 
     A0_vals = np.array([])
@@ -446,10 +440,27 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
 
     durations = np.array([])
 
+
+    ax0 = plt.figure().add_subplot(projection='3d')
+    wx = waypoints[:,0]
+    wy = waypoints[:,1]
+    wz = waypoints[:,2]
+
+    ax0.scatter(wx, wy, wz, marker='o')
+
+    segment_derivatives = np.zeros((2,3,3))
+    segment_derivatives[1,:,:] = np.inf
+
+    print("*************************************************")
+
     for i in range(0, Nw-1): 
 
         segment_waypoints = waypoints[i:i+2,:]
         segment_derivatives = desired_derivatives[i:i+2,:,:]
+
+        print("desired_derivatives", desired_derivatives)
+        print("segment_derivatives", segment_derivatives)
+
         segment_waypoint_start_times = waypoint_start_times[i:i+2]
 
         discretization_dt = segment_durations[i] / numSubsections
@@ -466,9 +477,9 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
         X0 = np.zeros((num_decision_variables,))
         
         A4, B4, C4, solution = solver.solve_coefficients(X0)
-        A0, A1, A2, A3, A4 = unroll_coefficients(np.array(A4),waypoints[0,0],solver.dts)
-        B0, B1, B2, B3, B4 = unroll_coefficients(np.array(B4),waypoints[0,1],solver.dts)
-        C0, C1, C2, C3, C4 = unroll_coefficients(np.array(C4),waypoints[0,2],solver.dts)
+        A0, A1, A2, A3, A4 = unroll_coefficients(np.array(A4),segment_waypoints[0,0],solver.dts)
+        B0, B1, B2, B3, B4 = unroll_coefficients(np.array(B4),segment_waypoints[0,1],solver.dts)
+        C0, C1, C2, C3, C4 = unroll_coefficients(np.array(C4),segment_waypoints[0,2],solver.dts)
 
         A0_vals = np.concatenate([A0_vals, np.array(A0).flatten()])
         B0_vals = np.concatenate([B0_vals, np.array(B0).flatten()])
@@ -487,6 +498,8 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
         C3_vals = np.concatenate([C3_vals, np.array(C3).flatten()])
         durations = np.concatenate([durations, solver.dts.flatten()])
         
+        ax0.scatter(A0,B0,C0)
+
         
         tn = solver.dts[-1]
         xn, xdn, xddn, xdddn = compute_state_1d(A0[-1],A1[-1],A2[-1],A3[-1],A4[-1], tn)
@@ -496,21 +509,26 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
         endpoint_speed = np.sqrt(xdn**2 + ydn**2 + zdn**2)
 
         # Update velocity constraint at end of segment
+        print("updating segment endpoint velocity: ", xdn, ydn, zdn)
+        print("endpoint speed: ", endpoint_speed)
+        segment_derivatives[0,0,0] = xdn
+        segment_derivatives[0,0,1] = ydn
+        segment_derivatives[0,0,2] = zdn
+
+        segment_derivatives[0,1, 0] = xddn
+        segment_derivatives[0,1, 1] = yddn
+        segment_derivatives[0,1, 2] = zddn
+
+        segment_derivatives[0,2, 1] = ydddn
+        segment_derivatives[0,2, 0] = xdddn
+        segment_derivatives[0,2, 2] = zdddn
         if(i < Nw-2):
-            print("updating segment endpoint velocity: ", xdn, ydn, zdn)
-            print("endpoint speed: ", endpoint_speed)
-            waypoint_desired_velocities[i+1,0] = xdn
-            waypoint_desired_velocities[i+1,1] = ydn
-            waypoint_desired_velocities[i+1,2] = zdn
+            print("sending trajectory endpoint velocity to zero")
+            segment_derivatives[1,:,:] = 0
 
-            waypoint_desired_accelerations[i+1,0] = xddn
-            waypoint_desired_accelerations[i+1,1] = yddn
-            waypoint_desired_accelerations[i+1,2] = zddn
+        print("--------------------------------------------------------------------")
 
-            waypoint_desired_jerks[i+1,1] = ydddn
-            waypoint_desired_jerks[i+1,0] = xdddn
-            waypoint_desired_jerks[i+1,2] = zdddn
-
+    plt.savefig("P0_coeffs.png")
 
     np.savez("combined_coefficients.npz", 
              A4=A4,

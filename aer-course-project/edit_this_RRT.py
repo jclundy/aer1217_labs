@@ -160,7 +160,7 @@ class Controller():
 
         ref_state = None
         save_file = "test_states.npz" # "trajectory_states.npz"
-        recompute_trajectory = True
+        recompute_trajectory = False
         if(os.path.exists(save_file) and not recompute_trajectory):
             print("loading saved trajectory")
             npzfile = np.load(save_file)
@@ -254,7 +254,7 @@ class Controller():
             command_type, args = Command(3), [0., 3]  # land
         elif iteration >= end_iteration:
             print("sending exit command")
-            command_type, args = Command(-1), []  # exit
+            command_type, args = Command(4), []  # exit
         else:
             command_type, args = Command(0), []
         #########################

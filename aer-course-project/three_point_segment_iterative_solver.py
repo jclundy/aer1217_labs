@@ -415,7 +415,7 @@ def evalute_polynomials_over_control_time_step(times, n, freq, A0, A1, A2, A3, A
 
     return states
 
-def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
+def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq, numWaypointsPerGroup):
     print("waypoints.shape=", waypoints.shape)
 
     Nw = waypoints.shape[0]
@@ -478,8 +478,6 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
 
     print("*************************************************")
 
-    numWaypointsPerGroup = 3
-
     num3Groups = np.floor((Nw - 1)/(numWaypointsPerGroup-1)).astype(np.uint32)
 
 
@@ -503,9 +501,8 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
         #     print("sending trajectory endpoint velocity to zero")
         if(groupIdx == num3Groups-1):
             print("setting trajectory endpoint velocity to zero")
-            segmentStartDerivatives = np.zeros((3,3))
+            segmentEndDerivatives = np.zeros((3,3))
         else:
-            nextGroupWaypoint = waypoints[segmentEndIdx+1,:]
             delta = (waypoints[segmentEndIdx+1,:] - waypoints[segmentEndIdx,:])
             endVel = delta/np.linalg.norm(delta) * averageSpeed
             segmentEndDerivatives = np.ones((3,3)) * np.inf

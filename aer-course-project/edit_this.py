@@ -223,15 +223,19 @@ class Controller():
         #########################
         # REPLACE THIS (START) ##
         #########################
+        landDuration = 4
+        takeOffTime  = 4
+
         stop_iteration = (self.total_duration+3)*self.CTRL_FREQ
         land_iteration = (self.total_duration+6)*self.CTRL_FREQ
-        end_iteration =  (self.total_duration+7)*self.CTRL_FREQ
+        end_iteration =  (self.total_duration+landDuration)*self.CTRL_FREQ
+
 
         if iteration == 0:
-            command_type, args = Command(2), [1, 2]  # takeoff
+            command_type, args = Command(2), [1, takeOffTime]  # takeoff
 
-        elif iteration >= 3*self.CTRL_FREQ and iteration < stop_iteration:
-            step = min(iteration - 3*self.CTRL_FREQ, len(self.ref_x)-1)
+        elif iteration >= takeOffTime*self.CTRL_FREQ and iteration < stop_iteration:
+            step = min(iteration - takeOffTime*self.CTRL_FREQ, len(self.ref_x)-1)
             command_type = Command(1)  # cmdFullState
             print("sending command full state")
             print("step=",step)
@@ -251,7 +255,7 @@ class Controller():
 
         elif iteration >= land_iteration and iteration < end_iteration:
             print("sending land command")
-            command_type, args = Command(3), [0., 3]  # land
+            command_type, args = Command(3), [0., landDuration]  # land
         elif iteration >= end_iteration:
             print("sending exit command")
             command_type, args = Command(4), []  # exit

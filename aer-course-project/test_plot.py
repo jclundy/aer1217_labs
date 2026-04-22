@@ -3,8 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # from combined_discretized_casadi_solver import *
-from fixed_number_of_subections_discretized_solver import *
-
+# from fixed_number_of_subections_discretized_solver import *
+from three_point_segment_iterative_solver import *
 
 npzfile = np.load("combined_coefficients.npz")
 A4_vals = npzfile["A4"]

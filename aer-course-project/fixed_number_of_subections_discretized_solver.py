@@ -20,11 +20,11 @@ class SegmentCasadiSolver:
         print("N=",N)
         # discretized times
         section_durations = waypoint_start_times[1:] - waypoint_start_times[0:-1]
-        section_dts = (section_durations / numSubsections).reshape(-1,1)
+        section_dts = (section_durations / numSubsections).reshape((-1,1))
         self.dts = (np.ones((self.Nw-1, numSubsections)) * section_dts).reshape(-1,)
 
-        # section_dt_0145 = (section_durations * 0.1).reshape(-1,1)
-        # section_dt_23 = (section_durations * 0.3).reshape(-1,1)
+        # section_dt_0145 = (section_durations * 0.1).reshape((-1,1))
+        # section_dt_23 = (section_durations * 0.3).reshape((-1,1))
 
         subsection_dts_start = []
         subsection_dts_end = []
@@ -452,7 +452,7 @@ def integrate_1d(P4,WP0, times):
 
 #     return x_array, y_array, z_array
 
-def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A3, A4, B0, B1, B2, B3,B4, C0, C1, C2, C3, C4):
+def evalute_polynomials_over_control_time_step(times, n, freq, A0, A1, A2, A3, A4, B0, B1, B2, B3,B4, C0, C1, C2, C3, C4):
     # x_vals = np.array([])
     # y_vals = np.array([])
     # z_vals = np.array([])
@@ -461,28 +461,29 @@ def evalute_polynomials_over_control_time_step(times, dt, n, freq, A0, A1, A2, A
     a_vals = np.array([])
     j_vals = np.array([])
 
+    print("times.shape", times.shape)
+    print("A0.shape", times.shape)
+
     for idx in range(0,n):
         duration = times[idx]
+
         nsample = int(duration * freq)
-        ti = dt * np.arange(nsample)
+        ti = np.arange(nsample) * 1 / freq
 
         x, xd, xdd, xddd = compute_state_1d(A0[idx], A1[idx], A2[idx], A3[idx], A4[idx], ti)
         y, yd, ydd, yddd = compute_state_1d(B0[idx], B1[idx], B2[idx], B3[idx], B4[idx], ti)
         z, zd, zdd, zddd = compute_state_1d(C0[idx], C1[idx], C2[idx], C3[idx], C4[idx], ti)
 
-        p = np.hstack([x, y, z])
-        v = np.hstack([xd, yd, zd])
-        a = np.hstack([xdd, ydd, zdd])
-        j = np.hstack([xddd, yddd, zddd])
+        p = np.hstack([x.reshape((-1,1)), y.reshape((-1,1)), z.reshape((-1,1))])
+        v = np.hstack([xd.reshape((-1,1)), yd.reshape((-1,1)), zd.reshape((-1,1))])
+        a = np.hstack([xdd.reshape((-1,1)), ydd.reshape((-1,1)), zdd.reshape((-1,1))])
+        j = np.hstack([xddd.reshape((-1,1)), yddd.reshape((-1,1)), zddd.reshape((-1,1))])
 
+        p_vals = p if(p_vals.size == 0) else np.concatenate([p_vals, p]).reshape(-1,3)
+        v_vals = v if(v_vals.size == 0) else np.concatenate([v_vals, v]).reshape(-1,3)
+        a_vals = a if(a_vals.size == 0) else np.concatenate([a_vals, a]).reshape(-1,3)
+        j_vals = j if(j_vals.size == 0) else np.concatenate([j_vals, j]).reshape(-1,3)
 
-        # x_vals = np.concatenate([x_vals, np.array(x).flatten()])
-        # y_vals = np.concatenate([y_vals, np.array(y).flatten()])
-        # z_vals = np.concatenate([z_vals, np.array(z).flatten()])
-        p_vals = p if(p_vals.size == 0) else np.concatenate([p_vals, p])
-        v_vals = v if(v_vals.size == 0) else np.concatenate([v_vals, v])
-        a_vals = a if(a_vals.size == 0) else np.concatenate([a_vals, a])
-        j_vals = j if(j_vals.size == 0) else np.concatenate([j_vals, j])
 
     states = np.hstack([p_vals, v_vals, a_vals, j_vals])
 
@@ -528,19 +529,25 @@ def generate_trajectory(waypoints, averageSpeed, numSegmentSubsections, ctrl_fre
     
     A4, B4, C4, solution = solver.solve_coefficients(X0)
 
-    print("A4=",A4)
-    print("B4=",B4)
-    print("C4=",C4)
-
     print(solution)
+    print("A4", A4.reshape((1,-1)))
+    print("B4", B4.reshape((1,-1)))
+    print("C4", C4.reshape((1,-1)))
 
-    A0, A1, A2, A3, A4 = unroll_coefficients(np.array(A4),waypoints[0,0],solver.dts)
-    B0, B1, B2, B3, B4 = unroll_coefficients(np.array(B4),waypoints[0,1],solver.dts)
-    C0, C1, C2, C3, C4 = unroll_coefficients(np.array(C4),waypoints[0,2],solver.dts)
+    A0, A1, A2, A3, _ = unroll_coefficients(np.array(A4),waypoints[0,0],solver.dts)
+    B0, B1, B2, B3, _ = unroll_coefficients(np.array(B4),waypoints[0,1],solver.dts)
+    C0, C1, C2, C3, _ = unroll_coefficients(np.array(C4),waypoints[0,2],solver.dts)
 
-    print("A4=",A4)
-    print("B4=",B4)
-    print("C4=",C4)
+    ax0 = plt.figure().add_subplot(projection='3d')
+    wx = waypoints[:,0]
+    wy = waypoints[:,1]
+    wz = waypoints[:,2]
+
+    ax0.scatter(wx, wy, wz, marker='o')
+    ax0.scatter(A0,B0,C0, marker='^')
+
+    plt.savefig("P0_coeffs.png")
+
 
     ctrl_dt = 1/ctrl_freq
 
@@ -555,7 +562,7 @@ def generate_trajectory(waypoints, averageSpeed, numSegmentSubsections, ctrl_fre
 
     print("A0.shape",A0.shape)
 
-    states = evalute_polynomials_over_control_time_step( solver.dts, 0.001, N_discretized_segments, ctrl_freq, 
+    states = evalute_polynomials_over_control_time_step(solver.dts, N_discretized_segments, ctrl_freq, 
                                                                            A0, A1, A2, A3, A4, 
                                                                            B0, B1, B2, B3, B4, 
                                                                            C0, C1, C2, C3, C4)
@@ -609,7 +616,7 @@ def evaluate_angular_states_over_trajectory(yaw_vals, phi_dot_vals, a_ref, j_ref
         y_b = y_b / np.linalg.norm(y_b)
         R = np.column_stack([x_b, y_b, z_b])
 
-        euler = Rotation.from_matrix(R).as_euler('xyz', degrees=False).reshape(-1,1)
+        euler = Rotation.from_matrix(R).as_euler('xyz', degrees=False).reshape((-1,1))
         T = np.linalg.norm(a_des)
 
         euler_values.append(euler)

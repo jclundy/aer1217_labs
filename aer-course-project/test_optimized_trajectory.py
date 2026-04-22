@@ -1,14 +1,14 @@
 use_discretized = True
-# if use_discretized:
-#     from fixed_number_of_subections_discretized_solver import *
-# else:
-#     from combined_discretized_casadi_solver import *
+if use_discretized:
+    from fixed_number_of_subections_discretized_solver import *
+else:
+    from combined_discretized_casadi_solver import *
 
-from three_point_segment_iterative_solver import *
+# from three_point_segment_iterative_solver import *
 
 def generate_waypoints():
     poses = [[-1.,-3.,1.],
-        [-0.574,-2.748,0.986],
+        [-0.574,-2.748,1.],
         [0.05,-2.5,1.],
         [0.5,-2.5,1.],
         [0.95,-2.5,1.],
@@ -65,7 +65,7 @@ def generate_waypoints():
 
 def main():
     all_waypoints = generate_waypoints()
-    waypoints = all_waypoints[0:6,:]
+    waypoints = all_waypoints[0:5,:]
    
     # total_time = 30.3
 
@@ -73,7 +73,7 @@ def main():
     ctrl_freq = 60
 
     if use_discretized:
-        numSubsections = 7
+        numSubsections = 11
         states, total_duration = generate_trajectory(waypoints, average_speed, numSubsections, ctrl_freq)
     else:
         discretization_dt = 0.1
@@ -100,7 +100,7 @@ def main():
     z_vals = states[:,2]
     
     
-    ax0.plot(x_vals,y_vals,z_vals, marker='o')
+    ax0.plot(x_vals,y_vals,z_vals)
     ax0.set_xlabel("x")
     ax0.set_ylabel("y")
     ax0.set_zlabel("z")

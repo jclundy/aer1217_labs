@@ -2,9 +2,9 @@ import casadi as ca
 import numpy as np
 import matplotlib.pyplot as plt
 
-# from combined_discretized_casadi_solver import *
+from combined_discretized_casadi_solver import *
 from fixed_number_of_subections_discretized_solver import *
-
+# from three_point_segment_iterative_solver import *
 
 npzfile = np.load("test_states.npz")
 states = npzfile["states"]

@@ -104,11 +104,15 @@ class SegmentCasadiSolver:
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
         # End waypoint equality
-        final_dt = adjusted_start_times[-1] - N * dt
-        xN, xdN, xddN, xdddN = compute_state_1d(A0[-1],A1[-1],A2[-1],A3[-1],A4[-1], final_dt)
-        yN, ydN, yddN, ydddN = compute_state_1d(B0[-1],B1[-1],B2[-1],B3[-1],B4[-1], final_dt)
-        zN, zdN, zddN, zdddN = compute_state_1d(C0[-1],C1[-1],C2[-1],C3[-1],C4[-1], final_dt)      
-        
+        # final_dt = self.dts[-1]
+        # xN, xdN, xddN, xdddN = compute_state_1d(A0[-1],A1[-1],A2[-1],A3[-1],A4[-1], final_dt)
+        # yN, ydN, yddN, ydddN = compute_state_1d(B0[-1],B1[-1],B2[-1],B3[-1],B4[-1], final_dt)
+        # zN, zdN, zddN, zdddN = compute_state_1d(C0[-1],C1[-1],C2[-1],C3[-1],C4[-1], final_dt)      
+
+        xN, xdN, xddN, xdddN = (x[-1], xd[-1], xdd[-1], xddd[-1])
+        yN, ydN, yddN, ydddN = (y[-1], yd[-1], ydd[-1], yddd[-1])
+        zN, zdN, zddN, zdddN = (z[-1], zd[-1], zdd[-1], zddd[-1])
+
         xN_error = xN - waypoints[self.Nw-1,0]
         yN_error = yN - waypoints[self.Nw-1,1]
         zN_error = zN - waypoints[self.Nw-1,2]

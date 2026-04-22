@@ -22,7 +22,7 @@ from safe_control_gym.utils.utils import sync
 
 try:
     from project_utils import Command, thrusts
-    from edit_this_RRT import Controller
+    from edit_this import Controller
 except ImportError:
     # Test import.
     from .project_utils import Command, thrusts

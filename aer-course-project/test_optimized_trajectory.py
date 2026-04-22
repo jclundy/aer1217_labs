@@ -74,8 +74,9 @@ def main():
     ctrl_freq = 60
 
     if use_discretized:
-        numSubsections = 22
-        states, total_duration = generate_trajectory(waypoints, average_speed, numSubsections, ctrl_freq)
+        numSubsections = 11
+        waypointsPerGroup = 5
+        states, total_duration = generate_trajectory(waypoints, average_speed, numSubsections, ctrl_freq, waypointsPerGroup)
     else:
         discretization_dt = 0.1
         states, total_duration = generate_trajectory(waypoints, average_speed, discretization_dt, ctrl_freq)

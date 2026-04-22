@@ -4,7 +4,7 @@
 # else:
 #     from combined_discretized_casadi_solver import *
 
-from three_point_segment_iterative_solver import *
+from piecewise_trajectory_solver import *
 use_discretized = True
 
 def generate_waypoints():

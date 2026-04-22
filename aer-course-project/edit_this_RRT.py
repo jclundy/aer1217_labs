@@ -38,7 +38,7 @@ except ImportError:
     # PyTest import.
     from .project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory
 
-from three_point_segment_iterative_solver import generate_trajectory
+from piecewise_trajectory_solver import generate_trajectory
 # from combined_discretized_casadi_solver import generate_trajectory
 import os
 #########################

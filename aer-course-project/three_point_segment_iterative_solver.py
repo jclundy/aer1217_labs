@@ -119,6 +119,24 @@ class SegmentCasadiSolver:
         g.append(zN_error)
         for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
 
+        if (np.isfinite(segmentEndDerivatives[0,:]).all()):
+            print("applying endpoint velocity condition")
+            xNd_error = xdN - segmentEndDerivatives[0,0]
+            yNd_error = ydN - segmentEndDerivatives[0,1]
+            zNd_error = zdN - segmentEndDerivatives[0,2]
+            # equality constraint for speed
+            g.append(xNd_error)
+            g.append(yNd_error)
+            g.append(zNd_error)
+            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
+        else:
+            print("applying bounds on endpoint velocity")
+            g.append(xdN)
+            g.append(ydN)
+            g.append(zdN)
+            for j in range(0,3): lb_vals.append(-self.maxSpeed); ub_vals.append(self.maxSpeed)
+
+
         if (np.isfinite(segmentEndDerivatives).all()):
             print("applying endpoint derivative condition")
             xNd_error = xdN - segmentEndDerivatives[0,0]
@@ -133,12 +151,6 @@ class SegmentCasadiSolver:
             yNddd_error = ydddN - segmentEndDerivatives[2,1]
             zNddd_error = zdddN - segmentEndDerivatives[2,2]
 
-            # equality constraint for speed
-            g.append(xNd_error)
-            g.append(yNd_error)
-            g.append(zNd_error)
-            for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
-
             # equality constraints for acceleration
             g.append(xNdd_error)
             g.append(yNdd_error)
@@ -151,7 +163,15 @@ class SegmentCasadiSolver:
             g.append(zNddd_error)
             for j in range(0,3): lb_vals.append(0); ub_vals.append(0)
         else:
-            print("skipping endpoint derivative condition")
+            print("applying bounds in endpoint derivatives")
+            g.append(xddN)
+            g.append(yddN)
+            g.append(zddN)
+            for j in range(0,3): lb_vals.append(-self.max_accel_xy); ub_vals.append(self.max_accel_xy)
+            g.append(xdddN)
+            g.append(xdddN)
+            g.append(xdddN)
+            for j in range(0,3): lb_vals.append(-self.max_jerk_xy); ub_vals.append(self.max_jerk_xy)
 
         for i in range(1,self.Nw-1):
             
@@ -458,7 +478,7 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
 
     print("*************************************************")
 
-    numWaypointsPerGroup = 7
+    numWaypointsPerGroup = 3
 
     num3Groups = np.floor((Nw - 1)/(numWaypointsPerGroup-1)).astype(np.uint32)
 
@@ -477,13 +497,20 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
         #     nextGroupWaypoint = waypoints[segmentEndIdx+1,:]
         #     # delta = (waypoints[segmentEndIdx+1,:] - waypoints[segmentEndIdx,:])
         #     # endVel = delta/np.linalg.norm(delta) * averageSpeed
-        #     segmentEndDerivatives = np.ones((3,3)) * np.inf
+        #     # segmentEndDerivatives = np.ones((3,3)) * np.inf
         #     # segmentEndDerivatives[0,:] = endVel
         # else:
         #     print("sending trajectory endpoint velocity to zero")
         if(groupIdx == num3Groups-1):
             print("setting trajectory endpoint velocity to zero")
             segmentStartDerivatives = np.zeros((3,3))
+        else:
+            nextGroupWaypoint = waypoints[segmentEndIdx+1,:]
+            delta = (waypoints[segmentEndIdx+1,:] - waypoints[segmentEndIdx,:])
+            endVel = delta/np.linalg.norm(delta) * averageSpeed
+            segmentEndDerivatives = np.ones((3,3)) * np.inf
+            segmentEndDerivatives[0,:] = endVel
+
 
         segment_waypoints = waypoints[segmentStartIdx:segmentEndIdx+1,:]
 
@@ -518,9 +545,6 @@ def generate_trajectory(waypoints, averageSpeed, numSubsections, ctrl_freq):
         A0_i, A1_i, A2_i, A3_i, _ = unroll_coefficients(np.array(A4_i),segment_waypoints[0,0],solver.dts)
         B0_i, B1_i, B2_i, B3_i, _ = unroll_coefficients(np.array(B4_i),segment_waypoints[0,1],solver.dts)
         C0_i, C1_i, C2_i, C3_i, _ = unroll_coefficients(np.array(C4_i),segment_waypoints[0,2],solver.dts)
-
-        print("A0_i", A0_i)
-        print("solver.dts", solver.dts)
 
         A0 = np.concatenate([A0, np.array(A0_i).flatten()])
         B0 = np.concatenate([B0, np.array(B0_i).flatten()])

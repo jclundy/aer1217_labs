@@ -250,10 +250,18 @@ class Controller():
                     self.ref_acc[step].flatten(),
                     self.ref_euler[step, 2],
                     self.ref_euler_rates[step]]
-            xe = self.ref_x[step] - obs[0]
-            ye = self.ref_y[step] - obs[2]
-            ze = self.ref_z[step] - obs[4]
-            print(step, xe, ye, ze)
+            # xe = self.ref_x[step] - obs[0]
+            # ye = self.ref_y[step] - obs[2]
+            # ze = self.ref_z[step] - obs[4]
+
+            rx = self.ref_x[step]
+            ry = self.ref_y[step]
+            rz = self.ref_z[step]
+            x = obs[0]
+            y = obs[2]
+            z = obs[3]
+
+            print(step, x, y, z, rx, ry, rz)
         elif iteration >= initial_stop_iteration and iteration < stop_iteration:
             command_type = Command(1)  # cmdFullState
             print("sending command full state, zero derivatives")

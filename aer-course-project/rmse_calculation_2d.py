@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
+import argparse
 
 def extract_positions(bag_path, topic):
     positions = []
@@ -74,7 +75,15 @@ def compute_rmse(path1, path2, num_points=200, dim=3):
 
 
 if __name__ == "__main__":
-    bag_file = "Group_2_trial_3_2026-04-22-18-05-54.bag"
+    parser = argparse.ArgumentParser(
+                    prog='RMSE Calculation',
+                    description='Computes RMSE for 2D and 3D trajectory',
+                    epilog='Pass in the path to the ros bag')
+    
+    parser.add_argument('bag_file')
+    args = parser.parse_args()
+
+    bag_file = args.bag_file
 
     topic_pose = "/cf9/pose"
     topic_cmd  = "/cf9/cmd_full_state"

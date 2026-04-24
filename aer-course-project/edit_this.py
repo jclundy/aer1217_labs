@@ -29,7 +29,7 @@ Tips:
 import numpy as np
 from collections import deque
 
-from example_custom_utils import gate_normal, gate_via_points, path, generate_trajectory
+from example_custom_utils import path, generate_trajectory
 
 try:
     from project_utils import Command, PIDController, timing_step, timing_ep, plot_trajectory, draw_trajectory
@@ -116,7 +116,7 @@ class Controller():
         plot_trajectory(t_scaled, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
 
         # Draw the trajectory on PyBullet's GUI.
-        #draw_trajectory(initial_info, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
+        draw_trajectory(initial_info, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
 
 
     def planning(self, use_firmware, initial_info):
@@ -239,8 +239,8 @@ class Controller():
         elif iteration >= takeOffTime*self.CTRL_FREQ and iteration < initial_stop_iteration:
             step = min(iteration - takeOffTime*self.CTRL_FREQ, len(self.ref_x)-1)
             command_type = Command(1)  # cmdFullState
-            print("sending command full state")
-            print("step=",step)
+            # print("sending command full state")
+            # print("step=",step)
             # print("step=",step)
             # print("ref pos", self.ref_x[step],self.ref_z[step],self.ref_y[step])
             # print("ref vel", self.ref_vel[step].flatten())
@@ -250,6 +250,10 @@ class Controller():
                     self.ref_acc[step].flatten(),
                     self.ref_euler[step, 2],
                     self.ref_euler_rates[step]]
+            xe = self.ref_x[step] - obs[0]
+            ye = self.ref_y[step] - obs[2]
+            ze = self.ref_z[step] - obs[4]
+            print(step, xe, ye, ze)
         elif iteration >= initial_stop_iteration and iteration < stop_iteration:
             command_type = Command(1)  # cmdFullState
             print("sending command full state, zero derivatives")

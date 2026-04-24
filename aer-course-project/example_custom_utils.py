@@ -1,56 +1,4 @@
 import numpy as np
-
-
-# ── Gate geometry helpers ─────────────────────────────────────────────────────
-
-def gate_normal(yaw):
-    """Unit vector that points through the gate opening (fly-through direction).
-
-    The gate frame is a square in the plane perpendicular to this vector.
-      yaw = 0       → gate plane is XZ → fly-through is ±Y → normal = [0,-1,0]
-      yaw = ±pi/2   → gate plane is YZ → fly-through is ±X → normal = [±1,0,0]
-    """
-    return np.array([np.sin(yaw), -np.cos(yaw), 0.0])
-
-
-def gate_via_points(gate_raw, prev_pos, next_pos, buf=0.40, z_bounds=(0.10, 1.95)):
-    """Return (approach, centre, departure) waypoints for a gate.
-
-    The approach and departure points are placed exactly along the gate normal
-    (the fly-through axis), NOT along the direction of travel.  This guarantees
-    the drone enters and exits perpendicular to the gate frame regardless of
-    where it came from, preventing diagonal frame collisions.
-
-    Args:
-        gate_raw : [x, y, z, r, p, yaw, type]
-        prev_pos : position before this gate (used only to pick the sign)
-        next_pos : position after  this gate (used only to pick the sign)
-        buf      : metres before/after gate centre to place sub-waypoints
-        z_bounds : (z_lo, z_hi) to clamp sub-waypoints
-    """
-    centre = np.array(gate_raw[:3], dtype=float)
-    yaw    = gate_raw[5]
-    nrm    = gate_normal(yaw)   # unit vector along fly-through axis
-
-    # Determine which side to approach from using the incoming direction
-    diff = centre - np.array(prev_pos, dtype=float)
-    sign = np.sign(np.dot(diff, nrm))
-    if abs(sign) < 0.1:
-        sign = 1.0
-
-    approach  = centre - sign * buf * nrm
-    departure = centre + sign * buf * nrm
-
-    # Clamp z
-    for pt in (approach, departure, centre):
-        pt[2] = np.clip(pt[2], z_bounds[0], z_bounds[1])
-
-    return approach, centre, departure
-
-
-# ── RRT* ─────────────────────────────────────────────────────────────────────
-
-import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -99,8 +47,6 @@ def gate_normal(yaw):
     return np.array([np.sin(yaw), -np.cos(yaw), 0.0])
 
 def gate_points(last_pt, gate_id, z_bounds=(0.10, 1.95)):
-    """Return (approach, centre, departure) waypoints for a gate."""
-
     ##buffer
     buf = 0.45
 
@@ -124,7 +70,7 @@ def gate_points(last_pt, gate_id, z_bounds=(0.10, 1.95)):
         approach = pt_b
         departure = pt_a
 
-    return approach, centre, departure
+    return approach, centre, departure ##entrance waypoint, centre of gate, exit waypoint
 
 # ── RRT* ─────────────────────────────────────────────────────────────────────
 def weighted_dist(a, b):

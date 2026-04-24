@@ -1,20 +1,34 @@
-import rosbag
+# import rosbag
 import numpy as np
 
+from pathlib import Path
+from rosbags.highlevel import AnyReader
+from rosbags.typesys import Stores, get_typestore
 
 def extract_positions(bag_path, topic):
     positions = []
+    bagpath = Path(bag_path)
     
-    with rosbag.Bag(bag_path, 'r') as bag:
-        for _, msg, _ in bag.read_messages(topics=[topic]):
+    # with rosbag.Bag(bag_path, 'r') as bag:
+    #     for _, msg, _ in bag.read_messages(topics=[topic]):
+    #         try:
+    #             p = msg.pose.position
+    #             positions.append([p.x, p.y, p.z])
+    #         except AttributeError:
+    #             continue
+    
+    with AnyReader([bagpath]) as reader:
+        connections = [x for x in reader.connections if x.topic == topic]
+        for connection, timestamp, rawdata in reader.messages(connections=connections):
             try:
+                msg = reader.deserialize(rawdata, connection.msgtype)
+                # print(msg.header.frame_id)
                 p = msg.pose.position
                 positions.append([p.x, p.y, p.z])
             except AttributeError:
                 continue
-    
     return np.array(positions)
-
+    
 
 def resample_path(path, num_points):
     path = np.array(path)
@@ -60,7 +74,7 @@ def compute_rmse(path1, path2, num_points=200, dim=3):
 
 
 if __name__ == "__main__":
-    bag_file = "Group_5_test_2026-04-22-14-43-27.bag"
+    bag_file = "Group_2_trial_3_2026-04-22-18-05-54.bag"
 
     topic_pose = "/cf9/pose"
     topic_cmd  = "/cf9/cmd_full_state"

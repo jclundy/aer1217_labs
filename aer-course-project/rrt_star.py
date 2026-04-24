@@ -24,9 +24,6 @@ BOUNDS   = np.array([[-3.5, 3.5], [-3.5, 3.5], [0.10, 1.95]])
 Z_BOUNDS = (BOUNDS[2, 0], BOUNDS[2, 1])
 PADDING = 0.5 #for sample selection
 
-##eg gate order
-GATE_ORDER = [1,3,2,4,3,1]
-
 ##RRT Variables
 ITERATION = 1000
 REWIRE = 0.7
@@ -268,14 +265,14 @@ def plan(start, goal, target_gate):
   
     return extract_path(goal_idx, nodes, parents)
 
-def path(GATE_ORDER):
+def path(gate_order):
     ##Get waypoints
     key_pts = [START.copy()]
     # gate_ids = [-1] ##O index
     gate_ids = []
 
     prev = START.copy()
-    for gid in GATE_ORDER:
+    for gid in gate_order:
         gid0 = gid-1
         gate_ids.extend([gid0, gid0, gid0]) ##for obstacle detection o indexed
         ## add pts to ensure flying in and out normal to gate
@@ -328,7 +325,7 @@ def path(GATE_ORDER):
     return full_path, key_pts
 
 ##plot 
-def plot_path(full_path, key_waypoints):
+def plot_path(full_path, key_waypoints, gate_order):
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='3d')
 
@@ -387,13 +384,13 @@ def plot_path(full_path, key_waypoints):
     ax.set_xlim(BOUNDS[0])
     ax.set_ylim(BOUNDS[1])
     ax.set_zlim(BOUNDS[2])
-    ax.set_title('RRT* path — gate sequence ' + str(GATE_ORDER))
+    ax.set_title('RRT* path — gate sequence ' + str(gate_order))
     ax.legend(loc='upper left', fontsize=8)
     plt.tight_layout()
     plt.show()
 
 if __name__ =="__main__":
-    gates = [1,3,4,1,3,2]
+    gates = [1, 3, 4, 2, 1, 4]
     path, key_waypoints = path(gates)
     print("Key waypoints (gates + start/goal):")
     for i, pt in enumerate(key_waypoints):
@@ -404,6 +401,6 @@ if __name__ =="__main__":
         print(f"  {i:3d}: {np.round(pt, 3)}")
 
     ##plot path
-    plot_path(path, key_waypoints)
+    plot_path(path, key_waypoints, gates)
 
 

@@ -12,6 +12,8 @@ from scipy.spatial.transform import Rotation
 from enum import Enum
 from functools import wraps
 
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 class Command(Enum):
     """Command types that can be used with pycffirmware.
@@ -288,6 +290,8 @@ def plot_trajectory(t_scaled,
     """Plot the trajectory with matplotlib.
 
     """
+ 
+
     # Plot each dimension.
     _, axs = plt.subplots(3, 1)
     axs[0].plot(t_scaled, ref_x)
@@ -296,19 +300,81 @@ def plot_trajectory(t_scaled,
     axs[1].set_ylabel('y (m)')
     axs[2].plot(t_scaled, ref_z)
     axs[2].set_ylabel('z (m)')
-    plt.show(block=False)
-    plt.pause(2)
-    plt.close()
+    plt.xlabel('Time (s)')
+    plt.show(block=True)
+    # plt.pause(2)
+    # plt.close()
+    START = [-1.0, -3.0, 1.0]  # start
+    GOAL = [-0.5,  2.0, 1.0]  # goal
+    ##constants
+    GATES = [  # x, y, z, r, p, y, type 
+        [ 0.5, -2.5, 1.0, 0, 0, -1.57, 0],      # gate 1
+        [ 2.0, -1.5, 1.0, 0, 0, 0,     0],      # gate 2
+        [ 0.0,  0.5, 1.0, 0, 0, 1.57,  0],      # gate 3
+        [-0.5,  1.5, 1.0, 0, 0, 0,     0]       # gate 4
+        ]
+    OBSTACLES =[  # x, y, z, r, p, y
+        [ 1.5, -2.5, 1.3, 0.35, 0, 0],             # obstacle 1
+        [ 0.5, -1.0, 1.3, 0.35, 0, 0],             # obstacle 2
+        [ 1.5,    0, 1.3, 0.35, 0, 0],             # obstacle 3
+        [-1.0,    0, 1.3, 0.35, 0, 0]              # obstacle 4  
+        ]
+    OBS_RADIUS  = 0.40  # pillar radius 0.06 m + 0.20 m noise + 0.09 m drone body
+    GATE_RADIUS = 0.40  # gate half-width 0.20 m + 0.20 m noise
 
     # Plot in 3D.
-    ax = plt.axes(projection='3d')
-    ax.plot3D(ref_x, ref_y, ref_z)
-    ax.scatter3D(waypoints[:,0], waypoints[:,1], waypoints[:,2])
+    # ax = plt.axes()
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    ax.scatter(*START, color='green',  s=80, zorder=5, label='Start')
+    ax.scatter(*GOAL,  color='red',    s=80, zorder=5, label='Goal')
+    # ── Gates ─────────────────────────────────────────────────────────────────
+    GATE_W = 0.4   # half-width of gate opening
+    for i, gate in enumerate(GATES):
+        gx, gy, gz = gate[:3]
+        yaw = gate[5]
+        # gate opening is perpendicular to the fly-through normal
+        perp = np.array([-np.cos(yaw), -np.sin(yaw), 0.0])
+        top  = np.array([0, 0, GATE_W])
+        # four corners of the gate rectangle
+        centre = np.array([gx, gy, gz])
+        corners = [
+            centre + perp * GATE_W + np.array([0, 0, -GATE_W]),
+            centre - perp * GATE_W + np.array([0, 0, -GATE_W]),
+            centre - perp * GATE_W + np.array([0, 0,  GATE_W]),
+            centre + perp * GATE_W + np.array([0, 0,  GATE_W]),
+        ]
+        poly = Poly3DCollection([corners], alpha=0.25, facecolor='gold', edgecolor='darkorange', linewidth=1.2)
+        ax.add_collection3d(poly)
+        ax.text(gx, gy, gz + GATE_W + 0.1, f'G{i+1}',
+                fontsize=8, color='darkorange', ha='center')
+
+    # ── Obstacles ─────────────────────────────────────────────────────────────
+    theta = np.linspace(0, 2 * np.pi, 30)
+    z_cyl = np.linspace(0.0, 1.95, 2)
+    for obs in OBSTACLES:
+        ox, oy, r = obs[0], obs[1], OBS_RADIUS
+        X = ox + r * np.outer(np.cos(theta), np.ones_like(z_cyl))
+        Y = oy + r * np.outer(np.sin(theta), np.ones_like(z_cyl))
+        Z =       np.outer(np.ones_like(theta), z_cyl)
+        ax.plot_surface(X, Y, Z, color='tomato', alpha=0.25, linewidth=0)
+        # top cap
+        cap_x = ox + r * np.cos(theta)
+        cap_y = oy + r * np.sin(theta)
+        cap_corners = list(zip(cap_x, cap_y, np.full_like(cap_x, 1.95)))
+        cap_poly = Poly3DCollection([cap_corners], alpha=0.3, facecolor='tomato', linewidth=0)
+        ax.add_collection3d(cap_poly)
+
+
+    ax.plot(ref_x, ref_y, ref_z)
+    ax.scatter(waypoints[:,0], waypoints[:,1],waypoints[:,2])
     ax.set_xlim([-3.5, 3.5])
     ax.set_ylim([-3.5, 3.5])
-    ax.set_zlim([0.0, 2.0])
-    plt.show(block=False)
-    plt.pause(2)
+    plt.ylabel('Y Position (m)')
+    plt.xlabel('X Position (m)')
+    plt.show(block=True)
+    # plt.pause(2)
     plt.close()
 
 def draw_trajectory(initial_info,
